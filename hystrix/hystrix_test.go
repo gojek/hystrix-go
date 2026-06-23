@@ -869,3 +869,27 @@ func interuptibleSleep(ctx context.Context, duration time.Duration) error {
 		return ctx.Err()
 	}
 }
+
+// go test -bench="Benchmark.*" -run ^$ -benchtime=3s -count=6 ./
+// go test -bench="Benchmark.*" -run ^$ -memprofile mem.out ./
+// go test -bench="Benchmark.*" -run ^$ -cpuprofile cpu.out ./
+func BenchmarkDoC(b *testing.B) {
+	//b.Skip()
+	const name = "bench"
+	ConfigureCommand(name, CommandConfig{Timeout: 50, MaxConcurrentRequests: 200})
+	_, _, _ = GetCircuit(name)
+
+	b.SetParallelism(1)
+	b.ReportAllocs()
+	b.ResetTimer()
+	b.RunParallel(func(pb *testing.PB) {
+		for pb.Next() {
+			err := DoC(b.Context(), name, func(ctx context.Context) error {
+				return nil
+			}, nil)
+			if err != nil {
+				b.Fatalf("expected success but got %v", err)
+			}
+		}
+	})
+}
