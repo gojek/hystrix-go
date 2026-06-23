@@ -24,13 +24,11 @@ func (e CircuitError) Error() string {
 // command models the state used for a single execution on a circuit. "hystrix command" is commonly
 // used to describe the pairing of your run/fallback functions with a circuit.
 type command struct {
-	ticket         *struct{}
-	start          time.Time
-	circuit        *CircuitBreaker
-	fallback       fallbackFuncC
-	runDuration    time.Duration
-	primaryEvent   string
-	secondaryEvent string
+	ticket      *struct{}
+	start       time.Time
+	circuit     *CircuitBreaker
+	fallback    fallbackFuncC
+	runDuration time.Duration
 }
 
 var (
@@ -110,9 +108,7 @@ func DoC(ctx context.Context, name string, run runFuncC, fallback fallbackFuncC)
 	// Rejecting new executions allows backends to recover, and the circuit will allow
 	// new traffic when it feels a healthly state has returned.
 	if !cmd.circuit.AllowRequest() {
-		err := cmd.errorWithFallback(ctx, ErrCircuitOpen)
-		cmd.reportAllEvent()
-		return err
+		return cmd.errorWithFallback(ctx, ErrCircuitOpen)
 	}
 
 	// As backends falter, requests take longer but don't always fail.
@@ -125,12 +121,8 @@ func DoC(ctx context.Context, name string, run runFuncC, fallback fallbackFuncC)
 		// when we introduce request queuing calculate ticket elapsed time here,
 		// so it can be used to adjust timeout and pass it to metric collector.
 	default:
-		err := cmd.errorWithFallback(ctx, ErrMaxConcurrency)
-		cmd.reportAllEvent()
-		return err
+		return cmd.errorWithFallback(ctx, ErrMaxConcurrency)
 	}
-
-	defer cmd.reportAllEvent()
 
 	runChan := make(chan error, 1)
 	runStart := time.Now()
@@ -148,7 +140,7 @@ func DoC(ctx context.Context, name string, run runFuncC, fallback fallbackFuncC)
 			return cmd.errorWithFallback(ctx, runErr)
 		}
 
-		cmd.primaryEvent = "success"
+		cmd.reportEvent(`success`, ``)
 		return nil
 	case <-ctx.Done():
 		cmd.circuit.executorPool.Return(cmd.ticket)
@@ -161,49 +153,42 @@ func DoC(ctx context.Context, name string, run runFuncC, fallback fallbackFuncC)
 	}
 }
 
-func (cmd *command) reportAllEvent() {
-	var err error
-	if cmd.secondaryEvent == "" {
-		err = cmd.circuit.ReportEvent([]string{cmd.primaryEvent}, cmd.start, cmd.runDuration)
-	} else {
-		err = cmd.circuit.ReportEvent([]string{cmd.primaryEvent, cmd.secondaryEvent}, cmd.start, cmd.runDuration)
-	}
+func (cmd *command) reportEvent(primaryEvent, secondaryEvent string) {
+	err := cmd.circuit.reportEvent(primaryEvent, secondaryEvent, cmd.start, cmd.runDuration)
 	if err != nil {
 		log.Printf(err.Error())
 	}
 }
 
 func (c *command) errorWithFallback(ctx context.Context, err error) error {
+	primaryEvent := "failure"
 	if err == ErrCircuitOpen {
-		c.primaryEvent = "short-circuit"
+		primaryEvent = "short-circuit"
 	} else if err == ErrMaxConcurrency {
-		c.primaryEvent = "rejected"
+		primaryEvent = "rejected"
 	} else if err == ErrTimeout {
-		c.primaryEvent = "timeout"
+		primaryEvent = "timeout"
 	} else if err == context.Canceled {
-		c.primaryEvent = "context_canceled"
+		primaryEvent = "context_canceled"
 	} else if err == context.DeadlineExceeded {
-		c.primaryEvent = "context_deadline_exceeded"
-	} else {
-		c.primaryEvent = "failure"
+		primaryEvent = "context_deadline_exceeded"
 	}
 
-	return c.tryFallback(ctx, err)
+	secondaryEvent, err := c.tryFallback(ctx, err)
+	c.reportEvent(primaryEvent, secondaryEvent)
+	return err
 }
 
-func (c *command) tryFallback(ctx context.Context, err error) error {
+func (c *command) tryFallback(ctx context.Context, err error) (string, error) {
 	if c.fallback == nil {
 		// If we don't have a fallback return the original error.
-		return err
+		return "", err
 	}
 
 	fallbackErr := c.fallback(ctx, err)
 	if fallbackErr != nil {
-		c.secondaryEvent = "fallback-failure"
-		return fmt.Errorf("fallback failed with '%v'. run error was '%v'", fallbackErr, err)
+		return "fallback-failure", fmt.Errorf("fallback failed with '%v'. run error was '%v'", fallbackErr, err)
 	}
 
-	c.secondaryEvent = "fallback-success"
-
-	return nil
+	return "fallback-success", nil
 }

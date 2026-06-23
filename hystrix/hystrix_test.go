@@ -409,8 +409,6 @@ func TestSlowFallbackOpenCircuit(t *testing.T) {
 	})
 	t.Run(`sync`, func(t *testing.T) {
 		synctest.Test(t, func(t *testing.T) {
-			t.Skip(`TODO: fix me`)
-
 			testSlowFallbackOpenCircuit(t, "hystrix-slow-fallback-open-circuit-sync")
 			synctest.Wait()
 		})
