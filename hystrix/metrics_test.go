@@ -13,11 +13,8 @@ func metricFailingPercent(circuitName string, p int) *metricExchange {
 		if i < p {
 			t = "failure"
 		}
-		m.Updates <- &commandExecution{Types: []string{t}}
+		m.Update(commandExecution{Types: []string{t}})
 	}
-
-	// Updates needs to be flushed
-	time.Sleep(100 * time.Millisecond)
 
 	return m
 }
@@ -31,8 +28,6 @@ func TestErrorPercent(t *testing.T) {
 	})
 	t.Run(`sync`, func(t *testing.T) {
 		synctest.Test(t, func(t *testing.T) {
-			t.Skip(`TODO: fix me`)
-
 			testErrorPercent(t, "test-error-percent-sync")
 			synctest.Wait()
 		})

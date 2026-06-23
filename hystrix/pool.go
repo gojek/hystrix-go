@@ -1,24 +1,29 @@
 package hystrix
 
+import "github.com/gojek/hystrix-go/hystrix/rolling"
+
 type executorPool struct {
-	Name    string
-	Metrics *poolMetrics
-	Max     int
-	Tickets chan *struct{}
+	Name              string
+	MaxActiveRequests *rolling.Number
+	Executed          *rolling.Number
+	Max               int
+	Tickets           chan *struct{}
 }
 
 func newExecutorPool(name string) *executorPool {
-	p := &executorPool{}
-	p.Name = name
-	p.Metrics = newPoolMetrics(name)
-	p.Max = getSettings(name).MaxConcurrentRequests
-
-	p.Tickets = make(chan *struct{}, p.Max)
-	for i := 0; i < p.Max; i++ {
-		p.Tickets <- &struct{}{}
+	maxRequests := getSettings(name).MaxConcurrentRequests
+	tickets := make(chan *struct{}, maxRequests)
+	for range maxRequests {
+		tickets <- &struct{}{}
 	}
 
-	return p
+	return &executorPool{
+		Name:              name,
+		MaxActiveRequests: rolling.NewNumber(),
+		Executed:          rolling.NewNumber(),
+		Max:               maxRequests,
+		Tickets:           tickets,
+	}
 }
 
 func (p *executorPool) Return(ticket *struct{}) {
@@ -26,12 +31,17 @@ func (p *executorPool) Return(ticket *struct{}) {
 		return
 	}
 
-	p.Metrics.Updates <- poolMetricsUpdate{
-		activeCount: p.ActiveCount(),
-	}
+	p.Executed.Increment(1)
+	p.MaxActiveRequests.UpdateMax(float64(p.ActiveCount()))
 	p.Tickets <- ticket
 }
 
 func (p *executorPool) ActiveCount() int {
 	return p.Max - len(p.Tickets)
+}
+
+func (p *executorPool) Reset() {
+	p.MaxActiveRequests.Reset()
+	p.Executed.Reset()
+
 }
