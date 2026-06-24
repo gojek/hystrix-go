@@ -2,6 +2,7 @@ package hystrix
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"time"
 )
@@ -153,8 +154,8 @@ func DoC(ctx context.Context, name string, run runFuncC, fallback fallbackFuncC)
 	}
 }
 
-func (cmd *command) reportEvent(primaryEvent, secondaryEvent string) {
-	err := cmd.circuit.reportEvent(primaryEvent, secondaryEvent, cmd.start, cmd.runDuration)
+func (c *command) reportEvent(primaryEvent, secondaryEvent string) {
+	err := c.circuit.reportEvent(primaryEvent, secondaryEvent, c.start, c.runDuration)
 	if err != nil {
 		log.Printf(err.Error())
 	}
@@ -162,15 +163,16 @@ func (cmd *command) reportEvent(primaryEvent, secondaryEvent string) {
 
 func (c *command) errorWithFallback(ctx context.Context, err error) error {
 	primaryEvent := "failure"
-	if err == ErrCircuitOpen {
+	ctxErr := ctx.Err()
+	if errors.Is(err, ErrCircuitOpen) {
 		primaryEvent = "short-circuit"
-	} else if err == ErrMaxConcurrency {
+	} else if errors.Is(err, ErrMaxConcurrency) {
 		primaryEvent = "rejected"
-	} else if err == ErrTimeout {
+	} else if errors.Is(err, ErrTimeout) {
 		primaryEvent = "timeout"
-	} else if err == context.Canceled {
+	} else if errors.Is(ctxErr, context.Canceled) {
 		primaryEvent = "context_canceled"
-	} else if err == context.DeadlineExceeded {
+	} else if errors.Is(ctxErr, context.DeadlineExceeded) {
 		primaryEvent = "context_deadline_exceeded"
 	}
 
@@ -187,7 +189,7 @@ func (c *command) tryFallback(ctx context.Context, err error) (string, error) {
 
 	fallbackErr := c.fallback(ctx, err)
 	if fallbackErr != nil {
-		return "fallback-failure", fmt.Errorf("fallback failed with '%v'. run error was '%v'", fallbackErr, err)
+		return "fallback-failure", fmt.Errorf("fallback failed with '%w'. run error was '%w'", fallbackErr, err)
 	}
 
 	return "fallback-success", nil

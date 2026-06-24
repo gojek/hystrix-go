@@ -592,7 +592,8 @@ func testContextHandling(t *testing.T, circuitName string) {
 	}
 
 	run := func(ctx context.Context) error {
-		return interuptibleSleep(ctx, 200*time.Millisecond)
+		interuptibleSleep(ctx, 200*time.Millisecond)
+		return nil
 	}
 
 	fallback := func(ctx context.Context, e error) error {
@@ -859,12 +860,10 @@ func testDoC_Timesout(t *testing.T, circuitName string) {
 	}
 }
 
-func interuptibleSleep(ctx context.Context, duration time.Duration) error {
+func interuptibleSleep(ctx context.Context, duration time.Duration) {
 	select {
 	case <-time.After(duration):
-		return nil
 	case <-ctx.Done():
-		return ctx.Err()
 	}
 }
 
