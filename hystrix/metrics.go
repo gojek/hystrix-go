@@ -8,10 +8,11 @@ import (
 )
 
 type commandExecution struct {
-	Types            []string      `json:"types"`
-	Start            time.Time     `json:"start_time"`
-	RunDuration      time.Duration `json:"run_duration"`
-	ConcurrencyInUse float64       `json:"concurrency_inuse"`
+	PrimaryEvent     string
+	SecondaryEvent   string
+	Start            time.Time
+	RunDuration      time.Duration
+	ConcurrencyInUse float64
 }
 
 type metricExchange struct {
@@ -84,7 +85,7 @@ func (e commandExecution) buildResult() metricCollector.MetricResult {
 		ConcurrencyInUse: e.ConcurrencyInUse,
 	}
 
-	switch e.Types[0] {
+	switch e.PrimaryEvent {
 	case "success":
 		r.Successes = 1
 	case "failure":
@@ -105,14 +106,12 @@ func (e commandExecution) buildResult() metricCollector.MetricResult {
 		r.ContextDeadlineExceeded = 1
 	}
 
-	if len(e.Types) > 1 {
-		// fallback metrics
-		if e.Types[1] == "fallback-success" {
-			r.FallbackSuccesses = 1
-		}
-		if e.Types[1] == "fallback-failure" {
-			r.FallbackFailures = 1
-		}
+	switch e.SecondaryEvent {
+	case "fallback-success":
+		r.FallbackSuccesses = 1
+	case "fallback-failure":
+		r.FallbackFailures = 1
 	}
+
 	return r
 }

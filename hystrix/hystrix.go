@@ -3,7 +3,6 @@ package hystrix
 import (
 	"context"
 	"fmt"
-	"sync"
 	"time"
 )
 
@@ -25,17 +24,11 @@ func (e CircuitError) Error() string {
 // command models the state used for a single execution on a circuit. "hystrix command" is commonly
 // used to describe the pairing of your run/fallback functions with a circuit.
 type command struct {
-	sync.Mutex
-
 	ticket      *struct{}
 	start       time.Time
-	errChan     chan error
-	finished    chan bool
 	circuit     *CircuitBreaker
-	run         runFuncC
 	fallback    fallbackFuncC
 	runDuration time.Duration
-	events      []string
 }
 
 var (
@@ -71,130 +64,15 @@ func Go(name string, run runFunc, fallback fallbackFunc) chan error {
 //
 // Define a fallback function if you want to define some code to execute during outages.
 func GoC(ctx context.Context, name string, run runFuncC, fallback fallbackFuncC) chan error {
-	cmd := &command{
-		run:      run,
-		fallback: fallback,
-		start:    time.Now(),
-		errChan:  make(chan error, 1),
-		finished: make(chan bool, 1),
-	}
-
-	// dont have methods with explicit params and returns
-	// let data come in and out naturally, like with any closure
-	// explicit error return to give place for us to kill switch the operation (fallback)
-
-	circuit, _, err := GetCircuit(name)
-	if err != nil {
-		cmd.errChan <- err
-		return cmd.errChan
-	}
-	cmd.circuit = circuit
-	ticketCond := sync.NewCond(cmd)
-	ticketChecked := false
-	// When the caller extracts error from returned errChan, it's assumed that
-	// the ticket's been returned to executorPool. Therefore, returnTicket() can
-	// not run after cmd.errorWithFallback().
-	returnTicket := func() {
-		cmd.Lock()
-		// Avoid releasing before a ticket is acquired.
-		for !ticketChecked {
-			ticketCond.Wait()
-		}
-		cmd.circuit.executorPool.Return(cmd.ticket)
-		cmd.Unlock()
-	}
-	// Shared by the following two goroutines. It ensures only the faster
-	// goroutine runs errWithFallback() and reportAllEvent().
-	returnOnce := &sync.Once{}
-	reportAllEvent := func() {
-		err := cmd.circuit.ReportEvent(cmd.events, cmd.start, cmd.runDuration)
+	errChan := make(chan error, 1)
+	go func() {
+		err := DoC(ctx, name, run, fallback)
 		if err != nil {
-			log.Printf(err.Error())
-		}
-	}
-
-	go func() {
-		defer func() { cmd.finished <- true }()
-
-		// Circuits get opened when recent executions have shown to have a high error rate.
-		// Rejecting new executions allows backends to recover, and the circuit will allow
-		// new traffic when it feels a healthly state has returned.
-		if !cmd.circuit.AllowRequest() {
-			cmd.Lock()
-			// It's safe for another goroutine to go ahead releasing a nil ticket.
-			ticketChecked = true
-			ticketCond.Signal()
-			cmd.Unlock()
-			returnOnce.Do(func() {
-				returnTicket()
-				cmd.errorWithFallback(ctx, ErrCircuitOpen)
-				reportAllEvent()
-			})
-			return
-		}
-
-		// As backends falter, requests take longer but don't always fail.
-		//
-		// When requests slow down but the incoming rate of requests stays the same, you have to
-		// run more at a time to keep up. By controlling concurrency during these situations, you can
-		// shed load which accumulates due to the increasing ratio of active commands to incoming requests.
-		cmd.Lock()
-		select {
-		case cmd.ticket = <-circuit.executorPool.Tickets:
-			ticketChecked = true
-			ticketCond.Signal()
-			cmd.Unlock()
-		default:
-			ticketChecked = true
-			ticketCond.Signal()
-			cmd.Unlock()
-			returnOnce.Do(func() {
-				returnTicket()
-				cmd.errorWithFallback(ctx, ErrMaxConcurrency)
-				reportAllEvent()
-			})
-			return
-		}
-
-		runStart := time.Now()
-		runErr := run(ctx)
-		returnOnce.Do(func() {
-			defer reportAllEvent()
-			cmd.runDuration = time.Since(runStart)
-			returnTicket()
-			if runErr != nil {
-				cmd.errorWithFallback(ctx, runErr)
-				return
-			}
-			cmd.reportEvent("success")
-		})
-	}()
-
-	go func() {
-		timer := time.NewTimer(getSettings(name).Timeout)
-		defer timer.Stop()
-
-		select {
-		case <-cmd.finished:
-			// returnOnce has been executed in another goroutine
-		case <-ctx.Done():
-			returnOnce.Do(func() {
-				returnTicket()
-				cmd.errorWithFallback(ctx, ctx.Err())
-				reportAllEvent()
-			})
-			return
-		case <-timer.C:
-			returnOnce.Do(func() {
-				returnTicket()
-				cmd.errorWithFallback(ctx, ErrTimeout)
-				reportAllEvent()
-			})
-			return
+			errChan <- err // send error to channel only if there is an error
 		}
 	}()
 
-	return cmd.errChan
+	return errChan
 }
 
 // Do runs your function in a synchronous manner, blocking until either your function succeeds
@@ -215,85 +93,102 @@ func Do(name string, run runFunc, fallback fallbackFunc) error {
 // DoC runs your function in a synchronous manner, blocking until either your function succeeds
 // or an error is returned, including hystrix circuit errors
 func DoC(ctx context.Context, name string, run runFuncC, fallback fallbackFuncC) error {
-	done := make(chan struct{}, 1)
-
-	r := func(ctx context.Context) error {
-		err := run(ctx)
-		if err != nil {
-			return err
-		}
-
-		done <- struct{}{}
-		return nil
-	}
-
-	f := func(ctx context.Context, e error) error {
-		err := fallback(ctx, e)
-		if err != nil {
-			return err
-		}
-
-		done <- struct{}{}
-		return nil
-	}
-
-	var errChan chan error
-	if fallback == nil {
-		errChan = GoC(ctx, name, r, nil)
-	} else {
-		errChan = GoC(ctx, name, r, f)
-	}
-
-	select {
-	case <-done:
-		return nil
-	case err := <-errChan:
+	circuit, _, err := GetCircuit(name)
+	if err != nil {
 		return err
 	}
+
+	cmd := &command{
+		start:    time.Now(),
+		circuit:  circuit,
+		fallback: fallback,
+	}
+
+	// Circuits get opened when recent executions have shown to have a high error rate.
+	// Rejecting new executions allows backends to recover, and the circuit will allow
+	// new traffic when it feels a healthly state has returned.
+	if !cmd.circuit.AllowRequest() {
+		return cmd.errorWithFallback(ctx, ErrCircuitOpen)
+	}
+
+	// As backends falter, requests take longer but don't always fail.
+	//
+	// When requests slow down but the incoming rate of requests stays the same, you have to
+	// run more at a time to keep up. By controlling concurrency during these situations, you can
+	// shed load which accumulates due to the increasing ratio of active commands to incoming requests.
+	select {
+	case cmd.ticket = <-circuit.executorPool.Tickets:
+		// when we introduce request queuing calculate ticket elapsed time here,
+		// so it can be used to adjust timeout and pass it to metric collector.
+	default:
+		return cmd.errorWithFallback(ctx, ErrMaxConcurrency)
+	}
+
+	runChan := make(chan error, 1)
+	runStart := time.Now()
+	go func() {
+		runChan <- run(ctx)
+	}()
+
+	timeout := getSettings(name).Timeout
+	select {
+	case runErr := <-runChan:
+		cmd.runDuration = time.Since(runStart)
+		cmd.circuit.executorPool.Return(cmd.ticket)
+
+		if runErr != nil {
+			return cmd.errorWithFallback(ctx, runErr)
+		}
+
+		cmd.reportEvent(`success`, ``)
+		return nil
+	case <-ctx.Done():
+		cmd.circuit.executorPool.Return(cmd.ticket)
+
+		return cmd.errorWithFallback(ctx, ctx.Err())
+	case <-time.After(timeout):
+		cmd.circuit.executorPool.Return(cmd.ticket)
+
+		return cmd.errorWithFallback(ctx, ErrTimeout)
+	}
 }
 
-func (c *command) reportEvent(eventType string) {
-	c.Lock()
-	defer c.Unlock()
-
-	c.events = append(c.events, eventType)
+func (cmd *command) reportEvent(primaryEvent, secondaryEvent string) {
+	err := cmd.circuit.reportEvent(primaryEvent, secondaryEvent, cmd.start, cmd.runDuration)
+	if err != nil {
+		log.Printf(err.Error())
+	}
 }
 
-// errorWithFallback triggers the fallback while reporting the appropriate metric events.
-func (c *command) errorWithFallback(ctx context.Context, err error) {
-	eventType := "failure"
+func (c *command) errorWithFallback(ctx context.Context, err error) error {
+	primaryEvent := "failure"
 	if err == ErrCircuitOpen {
-		eventType = "short-circuit"
+		primaryEvent = "short-circuit"
 	} else if err == ErrMaxConcurrency {
-		eventType = "rejected"
+		primaryEvent = "rejected"
 	} else if err == ErrTimeout {
-		eventType = "timeout"
+		primaryEvent = "timeout"
 	} else if err == context.Canceled {
-		eventType = "context_canceled"
+		primaryEvent = "context_canceled"
 	} else if err == context.DeadlineExceeded {
-		eventType = "context_deadline_exceeded"
+		primaryEvent = "context_deadline_exceeded"
 	}
 
-	c.reportEvent(eventType)
-	fallbackErr := c.tryFallback(ctx, err)
-	if fallbackErr != nil {
-		c.errChan <- fallbackErr
-	}
+	secondaryEvent, err := c.tryFallback(ctx, err)
+	c.reportEvent(primaryEvent, secondaryEvent)
+	return err
 }
 
-func (c *command) tryFallback(ctx context.Context, err error) error {
+func (c *command) tryFallback(ctx context.Context, err error) (string, error) {
 	if c.fallback == nil {
 		// If we don't have a fallback return the original error.
-		return err
+		return "", err
 	}
 
 	fallbackErr := c.fallback(ctx, err)
 	if fallbackErr != nil {
-		c.reportEvent("fallback-failure")
-		return fmt.Errorf("fallback failed with '%v'. run error was '%v'", fallbackErr, err)
+		return "fallback-failure", fmt.Errorf("fallback failed with '%v'. run error was '%v'", fallbackErr, err)
 	}
 
-	c.reportEvent("fallback-success")
-
-	return nil
+	return "fallback-success", nil
 }

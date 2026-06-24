@@ -13,7 +13,7 @@ func metricFailingPercent(circuitName string, p int) *metricExchange {
 		if i < p {
 			t = "failure"
 		}
-		m.Update(commandExecution{Types: []string{t}})
+		m.Update(commandExecution{PrimaryEvent: t})
 	}
 
 	return m
