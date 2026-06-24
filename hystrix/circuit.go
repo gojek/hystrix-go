@@ -59,7 +59,7 @@ func Flush() {
 
 	for name, cb := range circuitBreakers {
 		cb.metrics.Reset()
-		cb.executorPool.Reset()
+		cb.executorPool.ResetMetrics()
 		delete(circuitBreakers, name)
 	}
 }
