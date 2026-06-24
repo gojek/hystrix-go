@@ -5,6 +5,8 @@ import (
 	"errors"
 	"fmt"
 	"time"
+
+	"github.com/gojek/hystrix-go/hystrix/internal/pool"
 )
 
 type runFunc func() error
@@ -125,17 +127,20 @@ func DoC(ctx context.Context, name string, run runFuncC, fallback fallbackFuncC)
 		return cmd.errorWithFallback(ctx, ErrMaxConcurrency)
 	}
 
-	runChan := make(chan error, 1)
+	runChan := pool.AcquireSingleErrorChan()
 	runStart := time.Now()
 	go func() {
 		runChan <- run(ctx)
 	}()
 
-	timeout := getSettings(name).Timeout
+	timer := pool.AcquireTimer(getSettings(name).Timeout)
+	defer pool.ReleaseTimer(timer)
+
 	select {
 	case runErr := <-runChan:
 		cmd.runDuration = time.Since(runStart)
 		cmd.circuit.executorPool.Return(cmd.ticket)
+		pool.ReleaseSingleErrorChan(runChan) // safe to release as runChan is drained in this select-case block
 
 		if runErr != nil {
 			return cmd.errorWithFallback(ctx, runErr)
@@ -147,7 +152,7 @@ func DoC(ctx context.Context, name string, run runFuncC, fallback fallbackFuncC)
 		cmd.circuit.executorPool.Return(cmd.ticket)
 
 		return cmd.errorWithFallback(ctx, ctx.Err())
-	case <-time.After(timeout):
+	case <-timer.C:
 		cmd.circuit.executorPool.Return(cmd.ticket)
 
 		return cmd.errorWithFallback(ctx, ErrTimeout)
