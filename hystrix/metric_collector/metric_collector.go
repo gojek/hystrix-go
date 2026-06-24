@@ -42,17 +42,17 @@ func (m *metricCollectorRegistry) Register(initMetricCollector func(string) Metr
 }
 
 type MetricResult struct {
-	Attempts                float64
-	Errors                  float64
-	Successes               float64
-	Failures                float64
-	Rejects                 float64
-	ShortCircuits           float64
-	Timeouts                float64
-	FallbackSuccesses       float64
-	FallbackFailures        float64
-	ContextCanceled         float64
-	ContextDeadlineExceeded float64
+	Attempts                int64
+	Errors                  int64
+	Successes               int64
+	Failures                int64
+	Rejects                 int64
+	ShortCircuits           int64
+	Timeouts                int64
+	FallbackSuccesses       int64
+	FallbackFailures        int64
+	ContextCanceled         int64
+	ContextDeadlineExceeded int64
 	TotalDuration           time.Duration
 	RunDuration             time.Duration
 	ConcurrencyInUse        float64

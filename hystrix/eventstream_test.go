@@ -153,7 +153,7 @@ func streamMetrics(t *testing.T, url string) (chan string, chan bool) {
 }
 
 func TestEventStream(t *testing.T) {
-	t.Parallel()
+	// Do not use t.Parallel() as this test will temporarily enable metric_collector.DefaultCollectorTimingMetricEnabled
 	test.SkipSyncTest(t, func(t *testing.T) {
 		const successCircuitName = "eventstream"
 		const failingCircuitName = "eventstream-errorpercent"
@@ -185,7 +185,7 @@ func TestEventStream(t *testing.T) {
 }
 
 func TestClientCancelEventStream(t *testing.T) {
-	t.Parallel()
+	// Do not use t.Parallel() as this test will temporarily enable metric_collector.DefaultCollectorTimingMetricEnabled
 	test.SkipSyncTest(t, func(t *testing.T) {
 		server := startTestServer()
 		defer server.stopTestServer()
@@ -259,7 +259,7 @@ func TestClientCancelEventStream(t *testing.T) {
 }
 
 func TestThreadPoolStream(t *testing.T) {
-	t.Parallel()
+	// Do not use t.Parallel() as this test will temporarily enable metric_collector.DefaultCollectorTimingMetricEnabled
 	test.SkipSyncTest(t, func(t *testing.T) {
 		const circuitName = "threadpoolstream"
 		server := startTestServer()

@@ -84,9 +84,7 @@ func TestReportEventOpenThenClose(t *testing.T) {
 		if cb.IsOpen() {
 			t.Fatalf("circuit should not be open")
 		}
-		cb.mutex.RLock()
-		openedTime := cb.openedOrLastTestedTime
-		cb.mutex.RUnlock()
+		openedTime := cb.openedOrLastTestedTime.Load()
 
 		// unhealthy metrics
 		cb.metrics = metricFailingPercent(circuitName, 100)
@@ -99,9 +97,7 @@ func TestReportEventOpenThenClose(t *testing.T) {
 			t.Fatalf("ReportEvent() failed: %v", err)
 		}
 
-		cb.mutex.RLock()
-		recentOpenedTime := cb.openedOrLastTestedTime
-		cb.mutex.RUnlock()
+		recentOpenedTime := cb.openedOrLastTestedTime.Load()
 		if recentOpenedTime != openedTime {
 			t.Errorf("expected openedOrLastTestedTime to remain unchanged, but it changed from %v to %v", openedTime, cb.openedOrLastTestedTime)
 		}

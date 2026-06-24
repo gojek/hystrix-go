@@ -11,7 +11,7 @@ func TestMax(t *testing.T) {
 	t.Parallel()
 	test.SyncTest(t, func(t *testing.T) {
 		n := NewNumber()
-		for _, x := range []float64{10, 11, 9} {
+		for _, x := range []int64{10, 11, 9} {
 			n.UpdateMax(x)
 			time.Sleep(1 * time.Second)
 		}
@@ -26,13 +26,13 @@ func TestAvg(t *testing.T) {
 	t.Parallel()
 	test.SyncTest(t, func(t *testing.T) {
 		n := NewNumber()
-		for _, x := range []float64{0.5, 1.5, 2.5, 3.5, 4.5} {
+		for _, x := range []int64{5, 15, 25, 35, 45} {
 			n.Increment(x)
 			time.Sleep(1 * time.Second)
 		}
 
-		if val := n.Avg(time.Now()); val != 1.25 {
-			t.Errorf("Avg returned %v instead of 1.25", val)
+		if val := n.Avg(time.Now()); val != 12.5 {
+			t.Errorf("Avg returned %v instead of 12.5", val)
 		}
 	})
 }
@@ -53,6 +53,6 @@ func BenchmarkRollingNumberUpdateMax(b *testing.B) {
 	b.ResetTimer()
 
 	for i := 0; i < b.N; i++ {
-		n.UpdateMax(float64(i))
+		n.UpdateMax(int64(i))
 	}
 }

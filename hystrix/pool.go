@@ -1,6 +1,10 @@
 package hystrix
 
-import "github.com/gojek/hystrix-go/hystrix/rolling"
+import (
+	"time"
+
+	"github.com/gojek/hystrix-go/hystrix/rolling"
+)
 
 type executorPool struct {
 	Name              string
@@ -31,8 +35,9 @@ func (p *executorPool) Return(ticket *struct{}) {
 		return
 	}
 
-	p.Executed.Increment(1)
-	p.MaxActiveRequests.UpdateMax(float64(p.ActiveCount()))
+	now := time.Now()
+	p.Executed.IncrementAt(now, 1)
+	p.MaxActiveRequests.UpdateMaxAt(now, int64(p.ActiveCount()))
 	p.Tickets <- ticket
 }
 

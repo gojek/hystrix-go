@@ -124,11 +124,11 @@ func (g *Collector) setGauge(prefix string, value int64) {
 	}
 }
 
-func (g *Collector) incrementCounterMetric(prefix string, i float64) {
+func (g *Collector) incrementCounterMetric(prefix string, i int64) {
 	if i == 0 {
 		return
 	}
-	err := g.client.Inc(prefix, int64(i), g.sampleRate)
+	err := g.client.Inc(prefix, i, g.sampleRate)
 	if err != nil {
 		log.Printf("Error sending statsd metrics %s", prefix)
 	}

@@ -70,7 +70,7 @@ func NewCollector(name string) metricCollector.MetricCollector {
 	}
 }
 
-func (g *Collector) incrementCounterMetric(prefix string, i float64) {
+func (g *Collector) incrementCounterMetric(prefix string, i int64) {
 	if i == 0 {
 		return
 	}
@@ -78,7 +78,7 @@ func (g *Collector) incrementCounterMetric(prefix string, i float64) {
 	if !ok {
 		return
 	}
-	c.Inc(int64(i))
+	c.Inc(i)
 }
 
 func (g *Collector) updateTimerMetric(prefix string, dur time.Duration) {

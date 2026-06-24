@@ -1,91 +1,83 @@
 package rolling
 
 import (
-	"sync"
+	"sync/atomic"
 	"time"
 )
+
+const numberBucketSize = 10 + 1
 
 // Number tracks a numberBucket over a bounded number of
 // time buckets. Currently the buckets are one second long and only the last 10 seconds are kept.
 type Number struct {
-	Buckets map[int64]*numberBucket
-	Mutex   *sync.RWMutex
+	buckets []atomic.Pointer[numberBucket]
 }
 
 type numberBucket struct {
-	Value float64
+	key   int64
+	value atomic.Int64
 }
 
 // NewNumber initializes a RollingNumber struct.
 func NewNumber() *Number {
-	r := &Number{
-		Buckets: make(map[int64]*numberBucket),
-		Mutex:   &sync.RWMutex{},
+	buckets := make([]atomic.Pointer[numberBucket], numberBucketSize)
+	for i := 0; i < numberBucketSize; i++ {
+		buckets[i].Store(&numberBucket{})
 	}
-	return r
+	return &Number{
+		buckets: buckets,
+	}
 }
 
-func (r *Number) getCurrentBucket() *numberBucket {
-	now := time.Now().Unix()
-	var bucket *numberBucket
-	var ok bool
+func (r *Number) getBucketAt(t time.Time) *numberBucket {
+	epoch := t.Unix()
+	for {
+		bucket := r.buckets[epoch%numberBucketSize].Load()
+		if bucket.key == epoch {
+			return bucket
+		}
 
-	if bucket, ok = r.Buckets[now]; !ok {
-		bucket = &numberBucket{}
-		r.Buckets[now] = bucket
-	}
-
-	return bucket
-}
-
-func (r *Number) removeOldBuckets() {
-	now := time.Now().Unix() - 10
-
-	for timestamp := range r.Buckets {
-		// TODO: configurable rolling window
-		if timestamp <= now {
-			delete(r.Buckets, timestamp)
+		newBucket := &numberBucket{key: epoch}
+		if r.buckets[epoch%numberBucketSize].CompareAndSwap(bucket, newBucket) { // Swap successful
+			return newBucket
 		}
 	}
 }
 
 // Increment increments the number in current timeBucket.
-func (r *Number) Increment(i float64) {
+func (r *Number) Increment(i int64) {
+	r.IncrementAt(time.Now(), i)
+}
+
+// IncrementAt increments the number in current timeBucket.
+// Note: Caller is responsible to pass the current time
+func (r *Number) IncrementAt(t time.Time, i int64) {
 	if i == 0 {
 		return
 	}
 
-	r.Mutex.Lock()
-	defer r.Mutex.Unlock()
-
-	b := r.getCurrentBucket()
-	b.Value += i
-	r.removeOldBuckets()
+	r.getBucketAt(t).value.Add(i)
 }
 
 // UpdateMax updates the maximum value in the current bucket.
-func (r *Number) UpdateMax(n float64) {
-	r.Mutex.Lock()
-	defer r.Mutex.Unlock()
+func (r *Number) UpdateMax(n int64) {
+	r.UpdateMaxAt(time.Now(), n)
+}
 
-	b := r.getCurrentBucket()
-	if n > b.Value {
-		b.Value = n
-	}
-	r.removeOldBuckets()
+// UpdateMaxAt updates the maximum value in the current bucket.
+// Note: Caller is responsible to pass the current time
+func (r *Number) UpdateMaxAt(t time.Time, n int64) {
+	r.getBucketAt(t).updateMax(n)
 }
 
 // Sum sums the values over the buckets in the last 10 seconds.
-func (r *Number) Sum(now time.Time) float64 {
-	sum := float64(0)
+func (r *Number) Sum(now time.Time) int64 {
+	minKey := now.Unix() - 10
+	sum := int64(0)
 
-	r.Mutex.RLock()
-	defer r.Mutex.RUnlock()
-
-	for timestamp, bucket := range r.Buckets {
-		// TODO: configurable rolling window
-		if timestamp >= now.Unix()-10 {
-			sum += bucket.Value
+	for i := range r.buckets {
+		if bucket := r.buckets[i].Load(); bucket.key >= minKey {
+			sum += bucket.value.Load()
 		}
 	}
 
@@ -93,31 +85,39 @@ func (r *Number) Sum(now time.Time) float64 {
 }
 
 // Max returns the maximum value seen in the last 10 seconds.
-func (r *Number) Max(now time.Time) float64 {
-	var max float64
+func (r *Number) Max(now time.Time) int64 {
+	minKey := now.Unix() - 10
+	var maxVal int64
 
-	r.Mutex.RLock()
-	defer r.Mutex.RUnlock()
-
-	for timestamp, bucket := range r.Buckets {
-		// TODO: configurable rolling window
-		if timestamp >= now.Unix()-10 {
-			if bucket.Value > max {
-				max = bucket.Value
+	for i := range r.buckets {
+		if bucket := r.buckets[i].Load(); bucket.key >= minKey {
+			if val := bucket.value.Load(); val > maxVal {
+				maxVal = val
 			}
 		}
 	}
 
-	return max
+	return maxVal
 }
 
 func (r *Number) Avg(now time.Time) float64 {
-	return r.Sum(now) / 10
+	return float64(r.Sum(now)) / (numberBucketSize - 1)
 }
 
 func (r *Number) Reset() {
-	r.Mutex.Lock()
-	defer r.Mutex.Unlock()
+	for i := range r.buckets {
+		r.buckets[i].Store(&numberBucket{})
+	}
+}
 
-	r.Buckets = make(map[int64]*numberBucket)
+func (b *numberBucket) updateMax(n int64) {
+	for {
+		v := b.value.Load()
+		if n <= v {
+			return
+		}
+		if b.value.CompareAndSwap(v, n) {
+			return
+		}
+	}
 }
