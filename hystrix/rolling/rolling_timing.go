@@ -41,16 +41,13 @@ func (c byDuration) Less(i, j int) bool { return c[i] < c[j] }
 // to longest that have occurred in the last 60 seconds.
 func (r *Timing) SortedDurations() []time.Duration {
 	r.Mutex.RLock()
-	t := r.LastCachedTime
-	r.Mutex.RUnlock()
-
-	if t+time.Second.Nanoseconds() > time.Now().UnixNano() {
+	if r.LastCachedTime+time.Second.Nanoseconds() > time.Now().UnixNano() {
 		// don't recalculate if current cache is still fresh
-		r.Mutex.RLock()
 		duration := r.CachedSortedDurations
 		r.Mutex.RUnlock()
 		return duration
 	}
+	r.Mutex.RUnlock()
 
 	var durations byDuration
 	now := time.Now()
