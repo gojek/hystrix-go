@@ -1,7 +1,6 @@
 package hystrix
 
 import (
-	"sync"
 	"time"
 
 	metricCollector "github.com/gojek/hystrix-go/hystrix/metric_collector"
@@ -16,25 +15,16 @@ type commandExecution struct {
 }
 
 type metricExchange struct {
-	Name    string
-	Updates chan *commandExecution
-	Mutex   *sync.RWMutex
+	Name string
 
 	metricCollectors []metricCollector.MetricCollector
 }
 
 func newMetricExchange(name string) *metricExchange {
-	m := &metricExchange{}
-	m.Name = name
-
-	m.Updates = make(chan *commandExecution, 2000)
-	m.Mutex = &sync.RWMutex{}
-	m.metricCollectors = metricCollector.Registry.InitializeMetricCollectors(name)
-	m.Reset()
-
-	go m.Monitor()
-
-	return m
+	return &metricExchange{
+		Name:             name,
+		metricCollectors: metricCollector.Registry.InitializeMetricCollectors(name),
+	}
 }
 
 // The Default Collector function will panic if collectors are not setup to specification.
@@ -49,33 +39,52 @@ func (m *metricExchange) DefaultCollector() *metricCollector.DefaultMetricCollec
 	return collection
 }
 
-func (m *metricExchange) Monitor() {
-	for update := range m.Updates {
-		// we only grab a read lock to make sure Reset() isn't changing the numbers.
-		m.Mutex.RLock()
-
-		totalDuration := time.Since(update.Start)
-		wg := &sync.WaitGroup{}
-		for _, collector := range m.metricCollectors {
-			wg.Add(1)
-			go m.IncrementMetrics(wg, collector, update, totalDuration)
-		}
-		wg.Wait()
-
-		m.Mutex.RUnlock()
+func (m *metricExchange) Update(e commandExecution) {
+	result := e.buildResult()
+	for _, collector := range m.metricCollectors {
+		collector.Update(result)
 	}
 }
 
-func (m *metricExchange) IncrementMetrics(wg *sync.WaitGroup, collector metricCollector.MetricCollector, update *commandExecution, totalDuration time.Duration) {
-	// granular metrics
-	r := metricCollector.MetricResult{
-		Attempts:         1,
-		TotalDuration:    totalDuration,
-		RunDuration:      update.RunDuration,
-		ConcurrencyInUse: update.ConcurrencyInUse,
+func (m *metricExchange) Reset() {
+	for _, collector := range m.metricCollectors {
+		collector.Reset()
+	}
+}
+
+func (m *metricExchange) Requests() *rolling.Number {
+	return m.requestsLocked()
+}
+
+func (m *metricExchange) requestsLocked() *rolling.Number {
+	return m.DefaultCollector().NumRequests()
+}
+
+func (m *metricExchange) ErrorPercent(now time.Time) int {
+	var errPct float64
+	reqs := m.requestsLocked().Sum(now)
+	errs := m.DefaultCollector().Errors().Sum(now)
+
+	if reqs > 0 {
+		errPct = (float64(errs) / float64(reqs)) * 100
 	}
 
-	switch update.Types[0] {
+	return int(errPct + 0.5)
+}
+
+func (m *metricExchange) IsHealthy(now time.Time) bool {
+	return m.ErrorPercent(now) < getSettings(m.Name).ErrorPercentThreshold
+}
+
+func (e commandExecution) buildResult() metricCollector.MetricResult {
+	r := metricCollector.MetricResult{
+		Attempts:         1,
+		TotalDuration:    time.Since(e.Start),
+		RunDuration:      e.RunDuration,
+		ConcurrencyInUse: e.ConcurrencyInUse,
+	}
+
+	switch e.Types[0] {
 	case "success":
 		r.Successes = 1
 	case "failure":
@@ -96,55 +105,14 @@ func (m *metricExchange) IncrementMetrics(wg *sync.WaitGroup, collector metricCo
 		r.ContextDeadlineExceeded = 1
 	}
 
-	if len(update.Types) > 1 {
+	if len(e.Types) > 1 {
 		// fallback metrics
-		if update.Types[1] == "fallback-success" {
+		if e.Types[1] == "fallback-success" {
 			r.FallbackSuccesses = 1
 		}
-		if update.Types[1] == "fallback-failure" {
+		if e.Types[1] == "fallback-failure" {
 			r.FallbackFailures = 1
 		}
 	}
-
-	collector.Update(r)
-
-	wg.Done()
-}
-
-func (m *metricExchange) Reset() {
-	m.Mutex.Lock()
-	defer m.Mutex.Unlock()
-
-	for _, collector := range m.metricCollectors {
-		collector.Reset()
-	}
-}
-
-func (m *metricExchange) Requests() *rolling.Number {
-	m.Mutex.RLock()
-	defer m.Mutex.RUnlock()
-	return m.requestsLocked()
-}
-
-func (m *metricExchange) requestsLocked() *rolling.Number {
-	return m.DefaultCollector().NumRequests()
-}
-
-func (m *metricExchange) ErrorPercent(now time.Time) int {
-	m.Mutex.RLock()
-	defer m.Mutex.RUnlock()
-
-	var errPct float64
-	reqs := m.requestsLocked().Sum(now)
-	errs := m.DefaultCollector().Errors().Sum(now)
-
-	if reqs > 0 {
-		errPct = (float64(errs) / float64(reqs)) * 100
-	}
-
-	return int(errPct + 0.5)
-}
-
-func (m *metricExchange) IsHealthy(now time.Time) bool {
-	return m.ErrorPercent(now) < getSettings(m.Name).ErrorPercentThreshold
+	return r
 }

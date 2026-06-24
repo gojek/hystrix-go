@@ -146,3 +146,12 @@ func (r *Timing) Mean() uint32 {
 
 	return uint32(sum.Nanoseconds()/length) / 1000000
 }
+
+func (r *Timing) Reset() {
+	r.Mutex.Lock()
+	defer r.Mutex.Unlock()
+
+	r.Buckets = make(map[int64]*timingBucket)
+	r.LastCachedTime = 0
+	r.CachedSortedDurations = nil
+}

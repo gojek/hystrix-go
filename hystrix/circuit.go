@@ -59,7 +59,7 @@ func Flush() {
 
 	for name, cb := range circuitBreakers {
 		cb.metrics.Reset()
-		cb.executorPool.Metrics.Reset()
+		cb.executorPool.ResetMetrics()
 		delete(circuitBreakers, name)
 	}
 }
@@ -181,16 +181,12 @@ func (circuit *CircuitBreaker) ReportEvent(eventTypes []string, start time.Time,
 		concurrencyInUse = float64(circuit.executorPool.ActiveCount()) / float64(circuit.executorPool.Max)
 	}
 
-	select {
-	case circuit.metrics.Updates <- &commandExecution{
+	circuit.metrics.Update(commandExecution{
 		Types:            eventTypes,
 		Start:            start,
 		RunDuration:      runDuration,
 		ConcurrencyInUse: concurrencyInUse,
-	}:
-	default:
-		return CircuitError{Message: fmt.Sprintf("metrics channel (%v) is at capacity", circuit.Name)}
-	}
+	})
 
 	return nil
 }

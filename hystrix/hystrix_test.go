@@ -20,8 +20,6 @@ func TestSuccess(t *testing.T) {
 	})
 	t.Run(`sync`, func(t *testing.T) {
 		synctest.Test(t, func(t *testing.T) {
-			t.Skip(`TODO: fix me`)
-
 			testSuccess(t, "hystrix-success-sync")
 			synctest.Wait()
 		})
@@ -43,7 +41,7 @@ func testSuccess(t *testing.T, circuitName string) {
 		t.Errorf("expected 0 but got %v", val)
 	}
 
-	time.Sleep(10 * time.Millisecond)
+	time.Sleep(time.Millisecond)
 	cb, _, _ := GetCircuit(circuitName)
 	// metrics are recorded
 	if val := cb.metrics.DefaultCollector().Successes().Sum(time.Now()); val != 1 {
@@ -59,8 +57,6 @@ func TestFallback(t *testing.T) {
 	})
 	t.Run(`sync`, func(t *testing.T) {
 		synctest.Test(t, func(t *testing.T) {
-			t.Skip(`TODO: fix me`)
-
 			testFallback(t, "hystrix-fallback-sync")
 			synctest.Wait()
 		})
@@ -86,7 +82,7 @@ func testFallback(t *testing.T, circuitName string) {
 	if val := len(errChan); val != 0 {
 		t.Errorf("expected 0 but got %v", val)
 	}
-	time.Sleep(10 * time.Millisecond)
+	time.Sleep(time.Millisecond)
 	cb, _, _ := GetCircuit(circuitName)
 	if val := cb.metrics.DefaultCollector().Successes().Sum(time.Now()); val != 0 {
 		t.Errorf("expected 0 but got %v", val)
@@ -107,8 +103,6 @@ func TestTimeout(t *testing.T) {
 	})
 	t.Run(`sync`, func(t *testing.T) {
 		synctest.Test(t, func(t *testing.T) {
-			t.Skip(`TODO: fix me`)
-
 			testTimeout(t, "hystrix-timeout-sync")
 			synctest.Wait()
 		})
@@ -116,11 +110,12 @@ func TestTimeout(t *testing.T) {
 }
 
 func testTimeout(t *testing.T, circuitName string) {
+	ctx := t.Context()
 	ConfigureCommand(circuitName, CommandConfig{Timeout: 100})
 
-	resultChan := make(chan int)
-	errChan := GoC(context.Background(), circuitName, func(ctx context.Context) error {
-		time.Sleep(1 * time.Second)
+	resultChan := make(chan int, 1)
+	errChan := GoC(ctx, circuitName, func(ctx context.Context) error {
+		interuptibleSleep(ctx, time.Second)
 		resultChan <- 1
 		return nil
 	}, func(ctx context.Context, err error) error {
@@ -146,8 +141,6 @@ func TestTimeoutEmptyFallback(t *testing.T) {
 	})
 	t.Run(`sync`, func(t *testing.T) {
 		synctest.Test(t, func(t *testing.T) {
-			t.Skip(`TODO: fix me`)
-
 			testTimeoutEmptyFallback(t, "test-timeout-empty-fallback-sync")
 			synctest.Wait()
 		})
@@ -155,12 +148,11 @@ func TestTimeoutEmptyFallback(t *testing.T) {
 }
 
 func testTimeoutEmptyFallback(t *testing.T, circuitName string) {
+	ctx := t.Context()
 	ConfigureCommand(circuitName, CommandConfig{Timeout: 100})
 
-	resultChan := make(chan int)
-	errChan := GoC(context.Background(), circuitName, func(ctx context.Context) error {
-		time.Sleep(1 * time.Second)
-		resultChan <- 1
+	errChan := GoC(ctx, circuitName, func(ctx context.Context) error {
+		interuptibleSleep(ctx, 1*time.Second)
 		return nil
 	}, nil)
 
@@ -168,7 +160,6 @@ func testTimeoutEmptyFallback(t *testing.T, circuitName string) {
 		t.Errorf("expected ErrTimeout but got %v", val)
 	}
 
-	time.Sleep(10 * time.Millisecond)
 	cb, _, _ := GetCircuit(circuitName)
 	if val := cb.metrics.DefaultCollector().Successes().Sum(time.Now()); val != 0 {
 		t.Errorf("expected 0 but got %v", val)
@@ -192,8 +183,6 @@ func TestMaxConcurrent(t *testing.T) {
 	})
 	t.Run(`sync`, func(t *testing.T) {
 		synctest.Test(t, func(t *testing.T) {
-			t.Skip(`TODO: fix me`)
-
 			testMaxConcurrent(t, "hystrix-max-concurrent-sync")
 			synctest.Wait()
 		})
@@ -202,11 +191,9 @@ func TestMaxConcurrent(t *testing.T) {
 
 func testMaxConcurrent(t *testing.T, circuitName string) {
 	ConfigureCommand(circuitName, CommandConfig{MaxConcurrentRequests: 2})
-	resultChan := make(chan int)
 
 	run := func(ctx context.Context) error {
-		time.Sleep(1 * time.Second)
-		resultChan <- 1
+		interuptibleSleep(ctx, time.Second)
 		return nil
 	}
 
@@ -214,7 +201,7 @@ func testMaxConcurrent(t *testing.T, circuitName string) {
 	var good, bad int
 
 	for i := 0; i < 3; i++ {
-		errChan := GoC(context.Background(), circuitName, run, nil)
+		errChan := GoC(t.Context(), circuitName, run, nil)
 		time.Sleep(10 * time.Millisecond)
 
 		select {
@@ -243,8 +230,6 @@ func TestForceOpenCircuit(t *testing.T) {
 	})
 	t.Run(`sync`, func(t *testing.T) {
 		synctest.Test(t, func(t *testing.T) {
-			t.Skip(`TODO: fix me`)
-
 			testForceOpenCircuit(t, "hystrix-force-open-circuit-sync")
 			synctest.Wait()
 		})
@@ -268,7 +253,7 @@ func testForceOpenCircuit(t *testing.T, circuitName string) {
 		t.Errorf("expected ErrCircuitOpen but got %v", val)
 	}
 
-	time.Sleep(10 * time.Millisecond)
+	time.Sleep(time.Millisecond)
 	cb, _, _ = GetCircuit(circuitName)
 	if val := cb.metrics.DefaultCollector().Successes().Sum(time.Now()); val != 0 {
 		t.Errorf("expected 0 but got %v", val)
@@ -286,8 +271,6 @@ func TestNilFallbackRunError(t *testing.T) {
 	})
 	t.Run(`sync`, func(t *testing.T) {
 		synctest.Test(t, func(t *testing.T) {
-			t.Skip(`TODO: fix me`)
-
 			testNilFallbackRunError(t, "hystrix-nil-fallback-run-error-sync")
 			synctest.Wait()
 		})
@@ -312,8 +295,6 @@ func TestFailedFallback(t *testing.T) {
 	})
 	t.Run(`sync`, func(t *testing.T) {
 		synctest.Test(t, func(t *testing.T) {
-			t.Skip(`TODO: fix me`)
-
 			testFailedFallback(t, "hystrix-failed-fallback-sync")
 			synctest.Wait()
 		})
@@ -340,8 +321,6 @@ func TestCloseCircuitAfterSuccess(t *testing.T) {
 	})
 	t.Run(`sync`, func(t *testing.T) {
 		synctest.Test(t, func(t *testing.T) {
-			t.Skip(`TODO: fix me`)
-
 			testCloseCircuitAfterSuccess(t, "hystrix-close-circuit-after-success-sync")
 			synctest.Wait()
 		})
@@ -349,6 +328,7 @@ func TestCloseCircuitAfterSuccess(t *testing.T) {
 }
 
 func testCloseCircuitAfterSuccess(t *testing.T, circuitName string) {
+	ConfigureCommand(circuitName, CommandConfig{SleepWindow: 500})
 	cb, _, err := GetCircuit(circuitName)
 	if err != nil {
 		t.Fatalf("unexpected error getting circuit: %v", err)
@@ -364,7 +344,7 @@ func testCloseCircuitAfterSuccess(t *testing.T, circuitName string) {
 	}
 
 	// and a successful command is run after the sleep window
-	time.Sleep(6 * time.Second)
+	time.Sleep(600 * time.Millisecond)
 
 	done := make(chan bool, 1)
 	GoC(context.Background(), circuitName, func(ctx context.Context) error {
@@ -390,8 +370,6 @@ func TestFailAfterTimeout(t *testing.T) {
 	})
 	t.Run(`sync`, func(t *testing.T) {
 		synctest.Test(t, func(t *testing.T) {
-			t.Skip(`TODO: fix me`)
-
 			testFailAfterTimeout(t, "hystrix-fail-after-timeout-sync")
 			synctest.Wait()
 		})
@@ -451,7 +429,7 @@ func testSlowFallbackOpenCircuit(t *testing.T, circuitName string) {
 	out := make(chan struct{}, 2)
 
 	// when the command short circuits
-	GoC(context.Background(), circuitName, func(ctx context.Context) error {
+	GoC(t.Context(), circuitName, func(ctx context.Context) error {
 		return nil
 	}, func(ctx context.Context, err error) error {
 		time.Sleep(100 * time.Millisecond)
@@ -481,8 +459,6 @@ func TestFallbackAfterRejected(t *testing.T) {
 	})
 	t.Run(`sync`, func(t *testing.T) {
 		synctest.Test(t, func(t *testing.T) {
-			t.Skip(`TODO: fix me`)
-
 			testFallbackAfterRejected(t, "hystrix-fallback-after-rejected-sync")
 			synctest.Wait()
 		})
@@ -527,8 +503,6 @@ func TestReturnTicket_QuickCheck(t *testing.T) {
 	})
 	t.Run(`sync`, func(t *testing.T) {
 		synctest.Test(t, func(t *testing.T) {
-			t.Skip(`TODO: fix me`)
-
 			testReturnTicket_QuickCheck(t, "hystrix-return-ticket-quick-check-sync")
 			synctest.Wait()
 		})
@@ -538,9 +512,8 @@ func TestReturnTicket_QuickCheck(t *testing.T) {
 func testReturnTicket_QuickCheck(t *testing.T, circuitName string) {
 	compareTicket := func() bool {
 		ConfigureCommand(circuitName, CommandConfig{Timeout: 2})
-		errChan := GoC(context.Background(), circuitName, func(ctx context.Context) error {
-			c := make(chan struct{})
-			<-c // should block
+		errChan := GoC(t.Context(), circuitName, func(ctx context.Context) error {
+			<-ctx.Done()
 			return nil
 		}, nil)
 
@@ -570,8 +543,6 @@ func TestReturnTicket(t *testing.T) {
 	})
 	t.Run(`sync`, func(t *testing.T) {
 		synctest.Test(t, func(t *testing.T) {
-			t.Skip(`TODO: fix me`)
-
 			testReturnTicket(t, "hystrix-return-ticket-sync")
 			synctest.Wait()
 		})
@@ -579,11 +550,11 @@ func TestReturnTicket(t *testing.T) {
 }
 
 func testReturnTicket(t *testing.T, circuitName string) {
+	ctx := t.Context()
 	ConfigureCommand(circuitName, CommandConfig{Timeout: 10})
 
-	errChan := GoC(context.Background(), circuitName, func(ctx context.Context) error {
-		c := make(chan struct{})
-		<-c // should block
+	errChan := GoC(ctx, circuitName, func(ctx context.Context) error {
+		<-ctx.Done()
 		return nil
 	}, nil)
 
@@ -609,8 +580,6 @@ func TestContextHandling(t *testing.T) {
 	})
 	t.Run(`sync`, func(t *testing.T) {
 		synctest.Test(t, func(t *testing.T) {
-			t.Skip(`TODO: fix me`)
-
 			testContextHandling(t, "hystrix-context-handling-sync")
 			synctest.Wait()
 		})
@@ -624,11 +593,8 @@ func testContextHandling(t *testing.T, circuitName string) {
 		t.Fatal(err)
 	}
 
-	out := make(chan int, 1)
 	run := func(ctx context.Context) error {
-		time.Sleep(20 * time.Millisecond)
-		out <- 1
-		return nil
+		return interuptibleSleep(ctx, 200*time.Millisecond)
 	}
 
 	fallback := func(ctx context.Context, e error) error {
@@ -636,8 +602,8 @@ func testContextHandling(t *testing.T, circuitName string) {
 	}
 
 	//with a valid context
-	errChan := GoC(context.Background(), circuitName, run, nil)
-	time.Sleep(25 * time.Millisecond)
+	errChan := GoC(t.Context(), circuitName, run, nil)
+	time.Sleep(time.Millisecond)
 	if err := <-errChan; err != ErrTimeout {
 		t.Errorf("expected ErrTimeout but got %v", err)
 	}
@@ -659,7 +625,7 @@ func testContextHandling(t *testing.T, circuitName string) {
 	cb.metrics.DefaultCollector().Reset()
 
 	//with a valid context and a fallback
-	errChan = GoC(context.Background(), circuitName, run, fallback)
+	errChan = GoC(t.Context(), circuitName, run, fallback)
 	time.Sleep(25 * time.Millisecond)
 	if val := len(errChan); val != 0 {
 		t.Errorf("expected 0 but got %v", val)
@@ -687,7 +653,7 @@ func testContextHandling(t *testing.T, circuitName string) {
 	//with a context timeout
 	testCtx, cancel := context.WithTimeout(context.Background(), 5*time.Millisecond)
 	errChan = GoC(testCtx, circuitName, run, nil)
-	time.Sleep(25 * time.Millisecond)
+	time.Sleep(time.Millisecond)
 	if err := <-errChan; err != context.DeadlineExceeded {
 		t.Errorf("expected DeadlineExceeded but got %v", err)
 	}
@@ -743,7 +709,7 @@ func testContextHandling(t *testing.T, circuitName string) {
 	errChan = GoC(testCtx, circuitName, run, nil)
 	time.Sleep(5 * time.Millisecond)
 	cancel()
-	time.Sleep(20 * time.Millisecond)
+	time.Sleep(time.Millisecond)
 	if err := <-errChan; err != context.Canceled {
 		t.Errorf("expected context.Canceled but got %v", err)
 	}
@@ -801,8 +767,6 @@ func TestDoC_Success(t *testing.T) {
 	})
 	t.Run(`sync`, func(t *testing.T) {
 		synctest.Test(t, func(t *testing.T) {
-			t.Skip(`TODO: fix me`)
-
 			testDoC_Success(t, "hystrix-doc-success-sync")
 			synctest.Wait()
 		})
@@ -831,8 +795,6 @@ func TestDoC_Fails(t *testing.T) {
 	})
 	t.Run(`sync`, func(t *testing.T) {
 		synctest.Test(t, func(t *testing.T) {
-			t.Skip(`TODO: fix me`)
-
 			testDoC_Fails(t, "hystrix-doc-fails-sync")
 			synctest.Wait()
 		})
@@ -879,8 +841,6 @@ func TestDoC_Timesout(t *testing.T) {
 	})
 	t.Run(`sync`, func(t *testing.T) {
 		synctest.Test(t, func(t *testing.T) {
-			t.Skip(`TODO: fix me`)
-
 			testDoC_Timesout(t, "hystrix-doc-timesout-sync")
 			synctest.Wait()
 		})
@@ -891,12 +851,21 @@ func TestDoC_Timesout(t *testing.T) {
 func testDoC_Timesout(t *testing.T, circuitName string) {
 	ConfigureCommand(circuitName, CommandConfig{Timeout: 10})
 
-	err := DoC(context.Background(), circuitName, func(ctx context.Context) error {
-		time.Sleep(100 * time.Millisecond)
+	err := DoC(t.Context(), circuitName, func(ctx context.Context) error {
+		interuptibleSleep(ctx, 100*time.Millisecond)
 		return nil
 	}, nil)
 
 	if err != ErrTimeout {
 		t.Errorf("expected ErrTimeout but got %v", err)
+	}
+}
+
+func interuptibleSleep(ctx context.Context, duration time.Duration) error {
+	select {
+	case <-time.After(duration):
+		return nil
+	case <-ctx.Done():
+		return ctx.Err()
 	}
 }

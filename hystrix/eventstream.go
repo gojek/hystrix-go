@@ -153,8 +153,8 @@ func (sh *StreamHandler) publishThreadPools(pool *executorPool) error {
 		CurrentTaskCount:          0,
 		CurrentCompletedTaskCount: 0,
 
-		RollingCountThreadsExecuted: uint32(pool.Metrics.Executed.Sum(now)),
-		RollingMaxActiveThreads:     uint32(pool.Metrics.MaxActiveRequests.Max(now)),
+		RollingCountThreadsExecuted: uint32(pool.Executed.Sum(now)),
+		RollingMaxActiveThreads:     uint32(pool.MaxActiveRequests.Max(now)),
 
 		CurrentPoolSize:        uint32(pool.Max),
 		CurrentCorePoolSize:    uint32(pool.Max),

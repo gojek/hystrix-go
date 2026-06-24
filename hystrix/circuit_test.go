@@ -19,8 +19,6 @@ func TestGetCircuit(t *testing.T) {
 	})
 	t.Run(`sync`, func(t *testing.T) {
 		synctest.Test(t, func(t *testing.T) {
-			t.Skip(`TODO: fix me`)
-
 			testGetCircuit(t, `foo-sync`)
 			synctest.Wait()
 		})
@@ -53,8 +51,6 @@ func TestMultithreadedGetCircuit(t *testing.T) {
 	})
 	t.Run(`sync`, func(t *testing.T) {
 		synctest.Test(t, func(t *testing.T) {
-			t.Skip(`TODO: fix me`)
-
 			testMultithreadedGetCircuit(t, `foo-multi-threaded-sync`)
 			synctest.Wait()
 		})
@@ -103,8 +99,6 @@ func TestReportEventOpenThenClose(t *testing.T) {
 	})
 	t.Run(`sync`, func(t *testing.T) {
 		synctest.Test(t, func(t *testing.T) {
-			t.Skip(`TODO: fix me`)
-
 			testReportEventOpenThenClose(t, "foo-report-sync")
 			synctest.Wait()
 		})
@@ -152,8 +146,6 @@ func TestReportEventMultiThreaded(t *testing.T) {
 	})
 	t.Run(`sync`, func(t *testing.T) {
 		synctest.Test(t, func(t *testing.T) {
-			t.Skip(`TODO: fix me`)
-
 			testReportEventMultiThreaded(t, `foo-report-multi-threaded-sync`)
 			synctest.Wait()
 		})

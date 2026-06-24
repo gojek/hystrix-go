@@ -159,7 +159,7 @@ func TestEventStream(t *testing.T) {
 	})
 	t.Run(`sync`, func(t *testing.T) {
 		synctest.Test(t, func(t *testing.T) {
-			t.Skip(`TODO: fix me`)
+			t.Skip("skipping as event stream has IO dependency")
 
 			testEventStream(t, "eventstream-sync", "eventstream-errorpercent-sync")
 			synctest.Wait()
@@ -190,7 +190,6 @@ func testEventStream(t *testing.T, successCircuitName string, failingCircuitName
 
 	metric := grabFirstCommandFromStream(t, server.URL, failingCircuitName)
 	if metric.ErrorPct != 67 {
-		fmt.Println(metric)
 		t.Fatalf("expected metric error percent to be 67, but was %v", metric.ErrorPct)
 	}
 }
@@ -203,7 +202,7 @@ func TestClientCancelEventStream(t *testing.T) {
 	})
 	t.Run(`sync`, func(t *testing.T) {
 		synctest.Test(t, func(t *testing.T) {
-			t.Skip(`TODO: fix me`)
+			t.Skip("skipping as event stream has IO dependency")
 
 			testClientCancelEventStream(t, "clientcancel-eventstream-sync")
 			synctest.Wait()
@@ -290,7 +289,7 @@ func TestThreadPoolStream(t *testing.T) {
 	})
 	t.Run(`sync`, func(t *testing.T) {
 		synctest.Test(t, func(t *testing.T) {
-			t.Skip(`TODO: fix me`)
+			t.Skip("skipping as event stream has IO dependency")
 
 			testThreadPoolStream(t, "threadpoolstream-sync")
 			synctest.Wait()
