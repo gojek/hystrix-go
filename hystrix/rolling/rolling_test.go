@@ -2,38 +2,60 @@ package rolling
 
 import (
 	"testing"
+	"testing/synctest"
 	"time"
-
-	. "github.com/smartystreets/goconvey/convey"
 )
 
 func TestMax(t *testing.T) {
-
-	Convey("when adding values to a rolling number", t, func() {
-		n := NewNumber()
-		for _, x := range []float64{10, 11, 9} {
-			n.UpdateMax(x)
-			time.Sleep(1 * time.Second)
-		}
-
-		Convey("it should know the maximum", func() {
-			So(n.Max(time.Now()), ShouldEqual, 11)
+	t.Parallel()
+	t.Run(`parallel`, func(t *testing.T) {
+		t.Parallel()
+		testMax(t)
+	})
+	t.Run(`sync`, func(t *testing.T) {
+		synctest.Test(t, func(t *testing.T) {
+			testMax(t)
+			synctest.Wait()
 		})
 	})
 }
 
-func TestAvg(t *testing.T) {
-	Convey("when adding values to a rolling number", t, func() {
-		n := NewNumber()
-		for _, x := range []float64{0.5, 1.5, 2.5, 3.5, 4.5} {
-			n.Increment(x)
-			time.Sleep(1 * time.Second)
-		}
+func testMax(t *testing.T) {
+	n := NewNumber()
+	for _, x := range []float64{10, 11, 9} {
+		n.UpdateMax(x)
+		time.Sleep(1 * time.Second)
+	}
 
-		Convey("it should calculate the average over the number of configured buckets", func() {
-			So(n.Avg(time.Now()), ShouldEqual, 1.25)
+	if val := n.Max(time.Now()); val != 11 {
+		t.Errorf("Max returned %v instead of 11", val)
+	}
+}
+
+func TestAvg(t *testing.T) {
+	t.Parallel()
+	t.Run(`parallel`, func(t *testing.T) {
+		t.Parallel()
+		testAvg(t)
+	})
+	t.Run(`sync`, func(t *testing.T) {
+		synctest.Test(t, func(t *testing.T) {
+			testAvg(t)
+			synctest.Wait()
 		})
 	})
+}
+
+func testAvg(t *testing.T) {
+	n := NewNumber()
+	for _, x := range []float64{0.5, 1.5, 2.5, 3.5, 4.5} {
+		n.Increment(x)
+		time.Sleep(1 * time.Second)
+	}
+
+	if val := n.Avg(time.Now()); val != 1.25 {
+		t.Errorf("Avg returned %v instead of 1.25", val)
+	}
 }
 
 func BenchmarkRollingNumberIncrement(b *testing.B) {

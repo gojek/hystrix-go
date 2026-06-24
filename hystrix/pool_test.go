@@ -2,45 +2,67 @@ package hystrix
 
 import (
 	"testing"
+	"testing/synctest"
 	"time"
-
-	. "github.com/smartystreets/goconvey/convey"
 )
 
 func TestReturn(t *testing.T) {
-	defer Flush()
+	t.Parallel()
+	t.Run(`parallel`, func(t *testing.T) {
+		t.Parallel()
+		testReturn(t, "pool-return-parallel")
+	})
+	t.Run(`sync`, func(t *testing.T) {
+		synctest.Test(t, func(t *testing.T) {
+			t.Skip(`TODO: fix me`)
 
-	Convey("when returning a ticket to the pool", t, func() {
-		pool := newExecutorPool("pool")
-		ticket := <-pool.Tickets
-		pool.Return(ticket)
-		time.Sleep(1 * time.Millisecond)
-		Convey("total executed requests should increment", func() {
-			So(pool.Metrics.Executed.Sum(time.Now()), ShouldEqual, 1)
+			testReturn(t, "pool-return-sync")
+			synctest.Wait()
 		})
 	})
 }
 
+func testReturn(t *testing.T, circuitName string) {
+	pool := newExecutorPool(circuitName)
+	ticket := <-pool.Tickets
+	pool.Return(ticket)
+	time.Sleep(1 * time.Millisecond)
+	// total executed requests should increment
+	if val := pool.Metrics.Executed.Sum(time.Now()); val != 1 {
+		t.Fatalf("expected 1 executed request, got %v", val)
+	}
+}
+
 func TestActiveCount(t *testing.T) {
-	defer Flush()
+	t.Parallel()
+	t.Run(`parallel`, func(t *testing.T) {
+		t.Parallel()
+		testActiveCount(t, "pool-activecount-parallel")
+	})
+	t.Run(`sync`, func(t *testing.T) {
+		synctest.Test(t, func(t *testing.T) {
+			t.Skip(`TODO: fix me`)
 
-	Convey("when 3 tickets are pulled", t, func() {
-		pool := newExecutorPool("pool")
-		<-pool.Tickets
-		<-pool.Tickets
-		ticket := <-pool.Tickets
-
-		Convey("ActiveCount() should be 3", func() {
-			So(pool.ActiveCount(), ShouldEqual, 3)
-		})
-
-		Convey("and one is returned", func() {
-			pool.Return(ticket)
-
-			Convey("max active requests should be 3", func() {
-				time.Sleep(1 * time.Millisecond) // allow poolMetrics to process channel
-				So(pool.Metrics.MaxActiveRequests.Max(time.Now()), ShouldEqual, 3)
-			})
+			testActiveCount(t, "pool-activecount-sync")
+			synctest.Wait()
 		})
 	})
+}
+
+func testActiveCount(t *testing.T, circuitName string) {
+	// when 3 tickets are pulled
+	pool := newExecutorPool(circuitName)
+	<-pool.Tickets
+	<-pool.Tickets
+	ticket := <-pool.Tickets
+
+	if val := pool.ActiveCount(); val != 3 {
+		t.Errorf("expected 3 active requests, got %v", val)
+	}
+
+	pool.Return(ticket)
+	time.Sleep(1 * time.Millisecond) // allow poolMetrics to process channel
+	if val := pool.Metrics.MaxActiveRequests.Max(time.Now()); val != 3 {
+		t.Errorf("expected 3 max requests, got %v", val)
+	}
 }

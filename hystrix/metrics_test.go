@@ -2,13 +2,12 @@ package hystrix
 
 import (
 	"testing"
+	"testing/synctest"
 	"time"
-
-	. "github.com/smartystreets/goconvey/convey"
 )
 
-func metricFailingPercent(p int) *metricExchange {
-	m := newMetricExchange("")
+func metricFailingPercent(circuitName string, p int) *metricExchange {
+	m := newMetricExchange(circuitName)
 	for i := 0; i < 100; i++ {
 		t := "success"
 		if i < p {
@@ -24,22 +23,33 @@ func metricFailingPercent(p int) *metricExchange {
 }
 
 func TestErrorPercent(t *testing.T) {
-	Convey("with a metric failing 40 percent of the time", t, func() {
-		m := metricFailingPercent(40)
-		now := time.Now()
+	t.Parallel()
+	t.Run(`parallel`, func(t *testing.T) {
+		t.Parallel()
 
-		Convey("ErrorPercent() should return 40", func() {
-			p := m.ErrorPercent(now)
-			So(p, ShouldEqual, 40)
-		})
+		testErrorPercent(t, "test-error-percent-parallel")
+	})
+	t.Run(`sync`, func(t *testing.T) {
+		synctest.Test(t, func(t *testing.T) {
+			t.Skip(`TODO: fix me`)
 
-		Convey("and a error threshold set to 39", func() {
-			ConfigureCommand("", CommandConfig{ErrorPercentThreshold: 39})
-
-			Convey("the metrics should be unhealthy", func() {
-				So(m.IsHealthy(now), ShouldBeFalse)
-			})
-
+			testErrorPercent(t, "test-error-percent-sync")
+			synctest.Wait()
 		})
 	})
+}
+
+func testErrorPercent(t *testing.T, circuitName string) {
+	m := metricFailingPercent(circuitName, 40)
+	now := time.Now()
+
+	if p := m.ErrorPercent(now); p != 40 {
+		t.Fatalf("expected error percent to be 40, got %v", p)
+	}
+
+	ConfigureCommand(circuitName, CommandConfig{ErrorPercentThreshold: 39})
+
+	if m.IsHealthy(now) {
+		t.Fatal("expected metrics to be unhealthy, but they are healthy")
+	}
 }
