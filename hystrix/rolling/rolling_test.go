@@ -2,60 +2,39 @@ package rolling
 
 import (
 	"testing"
-	"testing/synctest"
 	"time"
+
+	"github.com/gojek/hystrix-go/hystrix/internal/test"
 )
 
 func TestMax(t *testing.T) {
 	t.Parallel()
-	t.Run(`parallel`, func(t *testing.T) {
-		t.Parallel()
-		testMax(t)
-	})
-	t.Run(`sync`, func(t *testing.T) {
-		synctest.Test(t, func(t *testing.T) {
-			testMax(t)
-			synctest.Wait()
-		})
-	})
-}
+	test.SyncTest(t, func(t *testing.T) {
+		n := NewNumber()
+		for _, x := range []float64{10, 11, 9} {
+			n.UpdateMax(x)
+			time.Sleep(1 * time.Second)
+		}
 
-func testMax(t *testing.T) {
-	n := NewNumber()
-	for _, x := range []float64{10, 11, 9} {
-		n.UpdateMax(x)
-		time.Sleep(1 * time.Second)
-	}
-
-	if val := n.Max(time.Now()); val != 11 {
-		t.Errorf("Max returned %v instead of 11", val)
-	}
+		if val := n.Max(time.Now()); val != 11 {
+			t.Errorf("Max returned %v instead of 11", val)
+		}
+	})
 }
 
 func TestAvg(t *testing.T) {
 	t.Parallel()
-	t.Run(`parallel`, func(t *testing.T) {
-		t.Parallel()
-		testAvg(t)
-	})
-	t.Run(`sync`, func(t *testing.T) {
-		synctest.Test(t, func(t *testing.T) {
-			testAvg(t)
-			synctest.Wait()
-		})
-	})
-}
+	test.SyncTest(t, func(t *testing.T) {
+		n := NewNumber()
+		for _, x := range []float64{0.5, 1.5, 2.5, 3.5, 4.5} {
+			n.Increment(x)
+			time.Sleep(1 * time.Second)
+		}
 
-func testAvg(t *testing.T) {
-	n := NewNumber()
-	for _, x := range []float64{0.5, 1.5, 2.5, 3.5, 4.5} {
-		n.Increment(x)
-		time.Sleep(1 * time.Second)
-	}
-
-	if val := n.Avg(time.Now()); val != 1.25 {
-		t.Errorf("Avg returned %v instead of 1.25", val)
-	}
+		if val := n.Avg(time.Now()); val != 1.25 {
+			t.Errorf("Avg returned %v instead of 1.25", val)
+		}
+	})
 }
 
 func BenchmarkRollingNumberIncrement(b *testing.B) {

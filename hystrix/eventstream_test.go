@@ -9,8 +9,9 @@ import (
 	"strings"
 	"sync"
 	"testing"
-	"testing/synctest"
 	"time"
+
+	"github.com/gojek/hystrix-go/hystrix/internal/test"
 )
 
 type eventStreamTestServer struct {
@@ -153,165 +154,129 @@ func streamMetrics(t *testing.T, url string) (chan string, chan bool) {
 
 func TestEventStream(t *testing.T) {
 	t.Parallel()
-	t.Run(`parallel`, func(t *testing.T) {
-		t.Parallel()
-		testEventStream(t, "eventstream-parallel", "eventstream-errorpercent-parallel")
+	test.SkipSyncTest(t, func(t *testing.T) {
+		const successCircuitName = "eventstream"
+		const failingCircuitName = "eventstream-errorpercent"
+		server := startTestServer()
+		defer server.stopTestServer()
+
+		//after 2 successful commands"
+		sleepingCommand(t, successCircuitName, 1*time.Millisecond)
+		sleepingCommand(t, successCircuitName, 1*time.Millisecond)
+
+		event := grabFirstCommandFromStream(t, server.URL, successCircuitName)
+		if event.Name != successCircuitName {
+			t.Fatalf("expected event name to be %v, but was %v", successCircuitName, event.Name)
+		}
+		if event.RequestCount != 2 {
+			t.Fatalf("expected event request count to be 2, but was %v", event.RequestCount)
+		}
+
+		// after 1 successful command and 2 unsuccessful commands
+		sleepingCommand(t, failingCircuitName, 1*time.Millisecond)
+		failingCommand(t, failingCircuitName, 1*time.Millisecond)
+		failingCommand(t, failingCircuitName, 1*time.Millisecond)
+
+		metric := grabFirstCommandFromStream(t, server.URL, failingCircuitName)
+		if metric.ErrorPct != 67 {
+			t.Fatalf("expected metric error percent to be 67, but was %v", metric.ErrorPct)
+		}
 	})
-	t.Run(`sync`, func(t *testing.T) {
-		synctest.Test(t, func(t *testing.T) {
-			t.Skip("skipping as event stream has IO dependency")
-
-			testEventStream(t, "eventstream-sync", "eventstream-errorpercent-sync")
-			synctest.Wait()
-		})
-	})
-}
-
-func testEventStream(t *testing.T, successCircuitName string, failingCircuitName string) {
-	server := startTestServer()
-	defer server.stopTestServer()
-
-	//after 2 successful commands"
-	sleepingCommand(t, successCircuitName, 1*time.Millisecond)
-	sleepingCommand(t, successCircuitName, 1*time.Millisecond)
-
-	event := grabFirstCommandFromStream(t, server.URL, successCircuitName)
-	if event.Name != successCircuitName {
-		t.Fatalf("expected event name to be %v, but was %v", successCircuitName, event.Name)
-	}
-	if event.RequestCount != 2 {
-		t.Fatalf("expected event request count to be 2, but was %v", event.RequestCount)
-	}
-
-	// after 1 successful command and 2 unsuccessful commands
-	sleepingCommand(t, failingCircuitName, 1*time.Millisecond)
-	failingCommand(t, failingCircuitName, 1*time.Millisecond)
-	failingCommand(t, failingCircuitName, 1*time.Millisecond)
-
-	metric := grabFirstCommandFromStream(t, server.URL, failingCircuitName)
-	if metric.ErrorPct != 67 {
-		t.Fatalf("expected metric error percent to be 67, but was %v", metric.ErrorPct)
-	}
 }
 
 func TestClientCancelEventStream(t *testing.T) {
 	t.Parallel()
-	t.Run(`parallel`, func(t *testing.T) {
-		t.Parallel()
-		testClientCancelEventStream(t, "clientcancel-eventstream-parallel")
-	})
-	t.Run(`sync`, func(t *testing.T) {
-		synctest.Test(t, func(t *testing.T) {
-			t.Skip("skipping as event stream has IO dependency")
+	test.SkipSyncTest(t, func(t *testing.T) {
+		server := startTestServer()
+		defer server.stopTestServer()
 
-			testClientCancelEventStream(t, "clientcancel-eventstream-sync")
-			synctest.Wait()
-		})
-	})
-}
+		sleepingCommand(t, "clientcancel-eventstream", 1*time.Millisecond)
 
-func testClientCancelEventStream(t *testing.T, circuitName string) {
-	server := startTestServer()
-	defer server.stopTestServer()
+		// after a client connects
+		ctx, cnclFn := context.WithCancel(context.Background())
+		defer cnclFn()
 
-	sleepingCommand(t, circuitName, 1*time.Millisecond)
-
-	// after a client connects
-	ctx, cnclFn := context.WithCancel(context.Background())
-	defer cnclFn()
-
-	req, err := http.NewRequestWithContext(ctx, "GET", server.URL, nil)
-	if err != nil {
-		t.Fatal(err)
-	}
-	client := new(http.Client)
-	wait := make(chan struct{})
-	afterFirstRead := &sync.WaitGroup{}
-	afterFirstRead.Add(1)
-
-	go func() {
-		afr := afterFirstRead
-		buf := []byte{0}
-		res, err := client.Do(req)
+		req, err := http.NewRequestWithContext(ctx, "GET", server.URL, nil)
 		if err != nil {
 			t.Fatal(err)
 		}
-		defer res.Body.Close()
+		client := new(http.Client)
+		wait := make(chan struct{})
+		afterFirstRead := &sync.WaitGroup{}
+		afterFirstRead.Add(1)
 
-		for {
-			select {
-			case <-wait:
-				//wait for master goroutine to break us out
-				cnclFn()
-				return
-			default:
-				//read something
-				_, err = res.Body.Read(buf)
-				if err != nil {
-					t.Fatal(err)
-				}
-				if afr != nil {
-					afr.Done()
-					afr = nil
+		go func() {
+			afr := afterFirstRead
+			buf := []byte{0}
+			res, err := client.Do(req)
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer res.Body.Close()
+
+			for {
+				select {
+				case <-wait:
+					//wait for master goroutine to break us out
+					cnclFn()
+					return
+				default:
+					//read something
+					_, err = res.Body.Read(buf)
+					if err != nil {
+						t.Fatal(err)
+					}
+					if afr != nil {
+						afr.Done()
+						afr = nil
+					}
 				}
 			}
+		}()
+		// need to make sure our request has round-tripped to the server
+		afterFirstRead.Wait()
+
+		// it should be registered
+		server.StreamHandler.mu.RLock()
+		if len(server.StreamHandler.requests) != 1 {
+			t.Fatalf("expected 1 request, but got %d", len(server.StreamHandler.requests))
 		}
-	}()
-	// need to make sure our request has round-tripped to the server
-	afterFirstRead.Wait()
+		server.StreamHandler.mu.RUnlock()
 
-	// it should be registered
-	server.StreamHandler.mu.RLock()
-	if len(server.StreamHandler.requests) != 1 {
-		t.Fatalf("expected 1 request, but got %d", len(server.StreamHandler.requests))
-	}
-	server.StreamHandler.mu.RUnlock()
-
-	// after client disconnects
-	// let the request be cancelled and the body closed
-	close(wait)
-	// wait for the server to clean up
-	time.Sleep(2000 * time.Millisecond)
-	// it should be detected as disconnected and de-registered
-	// confirm we have 0 clients
-	server.StreamHandler.mu.RLock()
-	if len(server.StreamHandler.requests) != 0 {
-		t.Fatalf("expected 0 request, but got %d", len(server.StreamHandler.requests))
-	}
-	server.StreamHandler.mu.RUnlock()
+		// after client disconnects
+		// let the request be cancelled and the body closed
+		close(wait)
+		// wait for the server to clean up
+		time.Sleep(2000 * time.Millisecond)
+		// it should be detected as disconnected and de-registered
+		// confirm we have 0 clients
+		server.StreamHandler.mu.RLock()
+		if len(server.StreamHandler.requests) != 0 {
+			t.Fatalf("expected 0 request, but got %d", len(server.StreamHandler.requests))
+		}
+		server.StreamHandler.mu.RUnlock()
+	})
 }
 
 func TestThreadPoolStream(t *testing.T) {
 	t.Parallel()
-	t.Run(`parallel`, func(t *testing.T) {
-		t.Parallel()
-		testThreadPoolStream(t, "threadpoolstream-parallel")
+	test.SkipSyncTest(t, func(t *testing.T) {
+		const circuitName = "threadpoolstream"
+		server := startTestServer()
+		defer server.stopTestServer()
+
+		// after a successful command
+		sleepingCommand(t, circuitName, 1*time.Millisecond)
+		metric := grabFirstThreadPoolFromStream(t, server.URL, circuitName)
+
+		// the rolling count of executions should increment
+		if metric.RollingCountThreadsExecuted != 1 {
+			t.Fatalf("expected 1 request, but got %d", metric.RollingCountThreadsExecuted)
+		}
+
+		// the pool size should be 10
+		if metric.CurrentPoolSize != 10 {
+			t.Fatalf("expected 10 request, but got %d", metric.CurrentPoolSize)
+		}
 	})
-	t.Run(`sync`, func(t *testing.T) {
-		synctest.Test(t, func(t *testing.T) {
-			t.Skip("skipping as event stream has IO dependency")
-
-			testThreadPoolStream(t, "threadpoolstream-sync")
-			synctest.Wait()
-		})
-	})
-}
-
-func testThreadPoolStream(t *testing.T, circuitName string) {
-	server := startTestServer()
-	defer server.stopTestServer()
-
-	// after a successful command
-	sleepingCommand(t, circuitName, 1*time.Millisecond)
-	metric := grabFirstThreadPoolFromStream(t, server.URL, circuitName)
-
-	// the rolling count of executions should increment
-	if metric.RollingCountThreadsExecuted != 1 {
-		t.Fatalf("expected 1 request, but got %d", metric.RollingCountThreadsExecuted)
-	}
-
-	// the pool size should be 10
-	if metric.CurrentPoolSize != 10 {
-		t.Fatalf("expected 10 request, but got %d", metric.CurrentPoolSize)
-	}
 }
