@@ -34,6 +34,7 @@ func TestAcquiredChannelIsInitiallyEmpty(t *testing.T) {
 func TestAcquiredChannelCanSendAndReceiveError(t *testing.T) {
 	t.Parallel()
 	test.SyncTest(t, func(t *testing.T) {
+		ReleaseSingleErrorChan(nil)
 		ch := AcquireSingleErrorChan()
 		defer ReleaseSingleErrorChan(ch)
 
@@ -87,6 +88,7 @@ func TestConcurrentAcquireAndReleaseDoNotRace(t *testing.T) {
 
 		for range goroutines {
 			go func() {
+				ReleaseSingleErrorChan(nil)
 				ch := AcquireSingleErrorChan()
 				ReleaseSingleErrorChan(ch)
 				done <- struct{}{}
