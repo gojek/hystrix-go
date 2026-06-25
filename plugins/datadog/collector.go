@@ -113,33 +113,33 @@ func NewCollectorWithClient(client Client) func(string) metricCollector.MetricCo
 
 func (dc *Collector) Update(r metricCollector.MetricResult) {
 	if r.Attempts > 0 {
-		dc.client.Count(Attempts, int64(r.Attempts), dc.tags, 1.0)
+		dc.client.Count(Attempts, r.Attempts, dc.tags, 1.0)
 	}
 	if r.Errors > 0 {
-		dc.client.Count(Errors, int64(r.Errors), dc.tags, 1.0)
+		dc.client.Count(Errors, r.Errors, dc.tags, 1.0)
 	}
 	if r.Successes > 0 {
 		dc.client.Gauge(CircuitOpen, 0, dc.tags, 1.0)
-		dc.client.Count(Successes, int64(r.Successes), dc.tags, 1.0)
+		dc.client.Count(Successes, r.Successes, dc.tags, 1.0)
 	}
 	if r.Failures > 0 {
-		dc.client.Count(Failures, int64(r.Failures), dc.tags, 1.0)
+		dc.client.Count(Failures, r.Failures, dc.tags, 1.0)
 	}
 	if r.Rejects > 0 {
-		dc.client.Count(Rejects, int64(r.Rejects), dc.tags, 1.0)
+		dc.client.Count(Rejects, r.Rejects, dc.tags, 1.0)
 	}
 	if r.ShortCircuits > 0 {
 		dc.client.Gauge(CircuitOpen, 1, dc.tags, 1.0)
-		dc.client.Count(ShortCircuits, int64(r.ShortCircuits), dc.tags, 1.0)
+		dc.client.Count(ShortCircuits, r.ShortCircuits, dc.tags, 1.0)
 	}
 	if r.Timeouts > 0 {
-		dc.client.Count(Timeouts, int64(r.Timeouts), dc.tags, 1.0)
+		dc.client.Count(Timeouts, r.Timeouts, dc.tags, 1.0)
 	}
 	if r.FallbackSuccesses > 0 {
-		dc.client.Count(FallbackSuccesses, int64(r.FallbackSuccesses), dc.tags, 1.0)
+		dc.client.Count(FallbackSuccesses, r.FallbackSuccesses, dc.tags, 1.0)
 	}
 	if r.FallbackFailures > 0 {
-		dc.client.Count(FallbackFailures, int64(r.FallbackFailures), dc.tags, 1.0)
+		dc.client.Count(FallbackFailures, r.FallbackFailures, dc.tags, 1.0)
 	}
 
 	ms := float64(r.TotalDuration.Nanoseconds() / 1000000)

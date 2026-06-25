@@ -1,8 +1,17 @@
 package metricCollector
 
 import (
+	"sync/atomic"
+	"time"
+
 	"github.com/gojek/hystrix-go/hystrix/rolling"
 )
+
+// DefaultMetricCollectorTimingEnabled controls whether default metric collector will capture timing
+// metrics (TotalDuration and RunDuration). This is disabled by default to avoid performance overhead.
+// When StreamHandler is serving a request, this flag will temporailby be enabled to capture timing
+// metrics for the duration of the request.
+var DefaultMetricCollectorTimingEnabled atomic.Bool
 
 // DefaultMetricCollector holds information about the circuit state.
 // This implementation of MetricCollector is the canonical source of information about the circuit.
@@ -110,20 +119,23 @@ func (d *DefaultMetricCollector) RunDuration() *rolling.Timing {
 }
 
 func (d *DefaultMetricCollector) Update(r MetricResult) {
-	d.numRequests.Increment(r.Attempts)
-	d.errors.Increment(r.Errors)
-	d.successes.Increment(r.Successes)
-	d.failures.Increment(r.Failures)
-	d.rejects.Increment(r.Rejects)
-	d.shortCircuits.Increment(r.ShortCircuits)
-	d.timeouts.Increment(r.Timeouts)
-	d.fallbackSuccesses.Increment(r.FallbackSuccesses)
-	d.fallbackFailures.Increment(r.FallbackFailures)
-	d.contextCanceled.Increment(r.ContextCanceled)
-	d.contextDeadlineExceeded.Increment(r.ContextDeadlineExceeded)
+	now := time.Now()
+	d.numRequests.IncrementAt(now, r.Attempts)
+	d.errors.IncrementAt(now, r.Errors)
+	d.successes.IncrementAt(now, r.Successes)
+	d.failures.IncrementAt(now, r.Failures)
+	d.rejects.IncrementAt(now, r.Rejects)
+	d.shortCircuits.IncrementAt(now, r.ShortCircuits)
+	d.timeouts.IncrementAt(now, r.Timeouts)
+	d.fallbackSuccesses.IncrementAt(now, r.FallbackSuccesses)
+	d.fallbackFailures.IncrementAt(now, r.FallbackFailures)
+	d.contextCanceled.IncrementAt(now, r.ContextCanceled)
+	d.contextDeadlineExceeded.IncrementAt(now, r.ContextDeadlineExceeded)
 
-	d.totalDuration.Add(r.TotalDuration)
-	d.runDuration.Add(r.RunDuration)
+	if DefaultMetricCollectorTimingEnabled.Load() {
+		d.totalDuration.Add(r.TotalDuration)
+		d.runDuration.Add(r.RunDuration)
+	}
 }
 
 // Reset resets all metrics in this collector to 0.

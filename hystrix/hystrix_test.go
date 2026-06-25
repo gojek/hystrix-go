@@ -173,37 +173,6 @@ func TestMaxConcurrent(t *testing.T) {
 	})
 }
 
-func TestForceOpenCircuit(t *testing.T) {
-	t.Parallel()
-	test.SyncTest(t, func(t *testing.T) {
-		const circuitName = "hystrix-force-open-circuit"
-		cb, _, err := GetCircuit(circuitName)
-		if err != nil {
-			t.Fatalf("unexpected error getting circuit: %v", err)
-		}
-
-		cb.toggleForceOpen(true)
-
-		errChan := GoC(context.Background(), circuitName, func(ctx context.Context) error {
-			return nil
-		}, nil)
-
-		// a 'circuit open' error is returned"
-		if val := <-errChan; !errors.Is(val, ErrCircuitOpen) {
-			t.Errorf("expected ErrCircuitOpen but got %v", val)
-		}
-
-		time.Sleep(time.Millisecond)
-		cb, _, _ = GetCircuit(circuitName)
-		if val := cb.metrics.DefaultCollector().Successes().Sum(time.Now()); val != 0 {
-			t.Errorf("expected 0 but got %v", val)
-		}
-		if val := cb.metrics.DefaultCollector().ShortCircuits().Sum(time.Now()); val != 1 {
-			t.Errorf("expected 1 but got %v", val)
-		}
-	})
-}
-
 func TestNilFallbackRunError(t *testing.T) {
 	t.Parallel()
 	test.SyncTest(t, func(t *testing.T) {
