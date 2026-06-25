@@ -58,7 +58,7 @@ func Flush() {
 	cbs := *circuitBreakers.Load()
 	for _, cb := range cbs {
 		cb.metrics.Reset()
-		cb.executorPool.Reset()
+		cb.executorPool.ResetMetrics()
 	}
 	circuitBreakers.Store(&map[string]*CircuitBreaker{})
 }

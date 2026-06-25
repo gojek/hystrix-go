@@ -45,8 +45,7 @@ func (p *executorPool) ActiveCount() int {
 	return p.Max - len(p.Tickets)
 }
 
-func (p *executorPool) Reset() {
+func (p *executorPool) ResetMetrics() {
 	p.MaxActiveRequests.Reset()
 	p.Executed.Reset()
-
 }

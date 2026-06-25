@@ -13,14 +13,12 @@ var singleErrorChanPool = sync.Pool{
 }
 
 func AcquireSingleErrorChan() chan error {
-	c := singleErrorChanPool.Get()
-	if errchan, ok := c.(chan error); ok {
-		return errchan
-	}
-
-	return make(chan error, 1)
+	return singleErrorChanPool.Get().(chan error)
 }
 
 func ReleaseSingleErrorChan(errchan chan error) {
+	if errchan == nil {
+		return
+	}
 	singleErrorChanPool.Put(errchan)
 }
