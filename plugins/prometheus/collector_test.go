@@ -53,7 +53,7 @@ hystrix_successes{command_name="test_command"} 1
 	err = hystrix.Do("test_command", func() error {
 		return hystrixErr
 	}, nil)
-	if err != hystrixErr {
+	if !errors.Is(err, hystrixErr) {
 		t.Fatalf("%v expected but got %v", hystrixErr, err)
 	}
 
@@ -224,7 +224,6 @@ hystrix_concurrency_in_use{command_name="test2"} 0.25
 hystrix_concurrency_in_use{command_name="test3"} 0.25
 `,
 	})
-
 }
 
 func assertMetrics(t *testing.T, g prometheus.Gatherer, metrics map[string]string) {

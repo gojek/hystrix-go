@@ -73,7 +73,13 @@ func InitializeCollector(config *CollectorConfig) (*CollectorClient, error) {
 		sampleRate = 1
 	}
 
-	c, err := statsd.NewBufferedClient(config.StatsdAddr, config.Prefix, 1*time.Second, flushBytes)
+	c, err := statsd.NewClientWithConfig(&statsd.ClientConfig{
+		Address:       config.StatsdAddr,
+		Prefix:        config.Prefix,
+		UseBuffered:   true,
+		FlushInterval: 1 * time.Second,
+		FlushBytes:    flushBytes,
+	})
 	if err != nil {
 		log.Printf("Could not initiale buffered client: %s. Falling back to a Noop Statsd client", err)
 
@@ -93,9 +99,9 @@ func (s *CollectorClient) NewStatsdCollector(name string) metricCollector.Metric
 	if s.client == nil {
 		log.Fatalf("Statsd client must be initialized before circuits are created.")
 	}
-	name = strings.Replace(name, "/", "-", -1)
-	name = strings.Replace(name, ":", "-", -1)
-	name = strings.Replace(name, ".", "-", -1)
+	name = strings.ReplaceAll(name, "/", "-")
+	name = strings.ReplaceAll(name, ":", "-")
+	name = strings.ReplaceAll(name, ".", "-")
 	return &Collector{
 		client:                  s.client,
 		circuitOpenPrefix:       name + ".circuitOpen",

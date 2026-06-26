@@ -42,7 +42,7 @@ func TestAcquiredChannelCanSendAndReceiveError(t *testing.T) {
 		ch <- sentinel
 
 		got := <-ch
-		if got != sentinel {
+		if !errors.Is(got, sentinel) {
 			t.Fatalf("expected %v, got %v", sentinel, got)
 		}
 	})
@@ -82,7 +82,7 @@ func TestReleasedChannelWithUnreadErrorIsNotReused(t *testing.T) {
 
 func TestConcurrentAcquireAndReleaseDoNotRace(t *testing.T) {
 	t.Parallel()
-	test.SyncTest(t, func(t *testing.T) {
+	test.SyncTest(t, func(_ *testing.T) {
 		const goroutines = 50
 		done := make(chan struct{})
 

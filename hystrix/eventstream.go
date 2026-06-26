@@ -22,9 +22,9 @@ func NewStreamHandler() *StreamHandler {
 
 // StreamHandler publishes metrics for each command and each pool once a second to all connected HTTP client.
 type StreamHandler struct {
+	done     chan struct{}
 	requests map[*http.Request]chan []byte
 	mu       sync.RWMutex
-	done     chan struct{}
 }
 
 // Start begins watching the in-memory circuit breakers for metrics
@@ -81,8 +81,12 @@ func (sh *StreamHandler) loop() {
 		select {
 		case <-tick:
 			for _, cb := range *circuitBreakers.Load() {
-				sh.publishMetrics(cb)
-				sh.publishThreadPools(cb.executorPool)
+				if err := sh.publishMetrics(cb); err != nil {
+					log.Printf("hystrix-go: publishing metrics: %v", err)
+				}
+				if err := sh.publishThreadPools(cb.executorPool); err != nil {
+					log.Printf("hystrix-go: publishing threads: %v", err)
+				}
 			}
 		case <-sh.done:
 			return
@@ -136,12 +140,7 @@ func (sh *StreamHandler) publishMetrics(cb *CircuitBreaker) error {
 	if err != nil {
 		return err
 	}
-	err = sh.writeToRequests(eventBytes)
-	if err != nil {
-		return err
-	}
-
-	return nil
+	return sh.writeToRequests(eventBytes)
 }
 
 func (sh *StreamHandler) publishThreadPools(pool *executorPool) error {
@@ -171,9 +170,7 @@ func (sh *StreamHandler) publishThreadPools(pool *executorPool) error {
 	if err != nil {
 		return err
 	}
-	err = sh.writeToRequests(eventBytes)
-
-	return nil
+	return sh.writeToRequests(eventBytes)
 }
 
 func (sh *StreamHandler) writeToRequests(eventBytes []byte) error {
@@ -241,54 +238,47 @@ func generateLatencyTimings(r *rolling.Timing) streamCmdLatency {
 }
 
 type streamCmdMetric struct {
-	Type           string `json:"type"`
-	Name           string `json:"name"`
-	Group          string `json:"group"`
-	Time           int64  `json:"currentTime"`
-	ReportingHosts uint32 `json:"reportingHosts"`
-
-	// Health
-	RequestCount       int64 `json:"requestCount"`
-	ErrorCount         int64 `json:"errorCount"`
-	ErrorPct           int   `json:"errorPercentage"`
-	CircuitBreakerOpen bool  `json:"isCircuitBreakerOpen"`
-
-	RollingCountCollapsedRequests  int64 `json:"rollingCountCollapsedRequests"`
-	RollingCountExceptionsThrown   int64 `json:"rollingCountExceptionsThrown"`
-	RollingCountFailure            int64 `json:"rollingCountFailure"`
-	RollingCountFallbackFailure    int64 `json:"rollingCountFallbackFailure"`
-	RollingCountFallbackRejection  int64 `json:"rollingCountFallbackRejection"`
-	RollingCountFallbackSuccess    int64 `json:"rollingCountFallbackSuccess"`
-	RollingCountResponsesFromCache int64 `json:"rollingCountResponsesFromCache"`
-	RollingCountSemaphoreRejected  int64 `json:"rollingCountSemaphoreRejected"`
-	RollingCountShortCircuited     int64 `json:"rollingCountShortCircuited"`
-	RollingCountSuccess            int64 `json:"rollingCountSuccess"`
-	RollingCountThreadPoolRejected int64 `json:"rollingCountThreadPoolRejected"`
-	RollingCountTimeout            int64 `json:"rollingCountTimeout"`
-
-	CurrentConcurrentExecutionCount int64 `json:"currentConcurrentExecutionCount"`
-
-	LatencyExecuteMean uint32           `json:"latencyExecute_mean"`
-	LatencyExecute     streamCmdLatency `json:"latencyExecute"`
-	LatencyTotalMean   uint32           `json:"latencyTotal_mean"`
-	LatencyTotal       streamCmdLatency `json:"latencyTotal"`
-
-	// Properties
-	CircuitBreakerRequestVolumeThreshold             uint32 `json:"propertyValue_circuitBreakerRequestVolumeThreshold"`
-	CircuitBreakerSleepWindow                        uint32 `json:"propertyValue_circuitBreakerSleepWindowInMilliseconds"`
-	CircuitBreakerErrorThresholdPercent              uint32 `json:"propertyValue_circuitBreakerErrorThresholdPercentage"`
-	CircuitBreakerForceOpen                          bool   `json:"propertyValue_circuitBreakerForceOpen"`
-	CircuitBreakerForceClosed                        bool   `json:"propertyValue_circuitBreakerForceClosed"`
-	CircuitBreakerEnabled                            bool   `json:"propertyValue_circuitBreakerEnabled"`
-	ExecutionIsolationStrategy                       string `json:"propertyValue_executionIsolationStrategy"`
-	ExecutionIsolationThreadTimeout                  uint32 `json:"propertyValue_executionIsolationThreadTimeoutInMilliseconds"`
-	ExecutionIsolationThreadInterruptOnTimeout       bool   `json:"propertyValue_executionIsolationThreadInterruptOnTimeout"`
-	ExecutionIsolationThreadPoolKeyOverride          string `json:"propertyValue_executionIsolationThreadPoolKeyOverride"`
-	ExecutionIsolationSemaphoreMaxConcurrentRequests uint32 `json:"propertyValue_executionIsolationSemaphoreMaxConcurrentRequests"`
-	FallbackIsolationSemaphoreMaxConcurrentRequests  uint32 `json:"propertyValue_fallbackIsolationSemaphoreMaxConcurrentRequests"`
-	RollingStatsWindow                               uint32 `json:"propertyValue_metricsRollingStatisticalWindowInMilliseconds"`
-	RequestCacheEnabled                              bool   `json:"propertyValue_requestCacheEnabled"`
-	RequestLogEnabled                                bool   `json:"propertyValue_requestLogEnabled"`
+	Type                                             string           `json:"type"`
+	Name                                             string           `json:"name"`
+	Group                                            string           `json:"group"`
+	ExecutionIsolationThreadPoolKeyOverride          string           `json:"propertyValue_executionIsolationThreadPoolKeyOverride"`
+	ExecutionIsolationStrategy                       string           `json:"propertyValue_executionIsolationStrategy"`
+	RollingCountTimeout                              int64            `json:"rollingCountTimeout"`
+	RollingCountFallbackSuccess                      int64            `json:"rollingCountFallbackSuccess"`
+	ErrorPct                                         int              `json:"errorPercentage"`
+	Time                                             int64            `json:"currentTime"`
+	RollingCountCollapsedRequests                    int64            `json:"rollingCountCollapsedRequests"`
+	RollingCountExceptionsThrown                     int64            `json:"rollingCountExceptionsThrown"`
+	RollingCountFailure                              int64            `json:"rollingCountFailure"`
+	RollingCountFallbackFailure                      int64            `json:"rollingCountFallbackFailure"`
+	RollingCountFallbackRejection                    int64            `json:"rollingCountFallbackRejection"`
+	ErrorCount                                       int64            `json:"errorCount"`
+	RollingCountResponsesFromCache                   int64            `json:"rollingCountResponsesFromCache"`
+	RollingCountSemaphoreRejected                    int64            `json:"rollingCountSemaphoreRejected"`
+	RollingCountShortCircuited                       int64            `json:"rollingCountShortCircuited"`
+	RollingCountSuccess                              int64            `json:"rollingCountSuccess"`
+	RollingCountThreadPoolRejected                   int64            `json:"rollingCountThreadPoolRejected"`
+	RequestCount                                     int64            `json:"requestCount"`
+	CurrentConcurrentExecutionCount                  int64            `json:"currentConcurrentExecutionCount"`
+	LatencyTotal                                     streamCmdLatency `json:"latencyTotal"`
+	LatencyExecute                                   streamCmdLatency `json:"latencyExecute"`
+	LatencyExecuteMean                               uint32           `json:"latencyExecute_mean"`
+	FallbackIsolationSemaphoreMaxConcurrentRequests  uint32           `json:"propertyValue_fallbackIsolationSemaphoreMaxConcurrentRequests"`
+	CircuitBreakerRequestVolumeThreshold             uint32           `json:"propertyValue_circuitBreakerRequestVolumeThreshold"`
+	CircuitBreakerSleepWindow                        uint32           `json:"propertyValue_circuitBreakerSleepWindowInMilliseconds"`
+	CircuitBreakerErrorThresholdPercent              uint32           `json:"propertyValue_circuitBreakerErrorThresholdPercentage"`
+	RollingStatsWindow                               uint32           `json:"propertyValue_metricsRollingStatisticalWindowInMilliseconds"`
+	LatencyTotalMean                                 uint32           `json:"latencyTotal_mean"`
+	ExecutionIsolationSemaphoreMaxConcurrentRequests uint32           `json:"propertyValue_executionIsolationSemaphoreMaxConcurrentRequests"`
+	ReportingHosts                                   uint32           `json:"reportingHosts"`
+	ExecutionIsolationThreadTimeout                  uint32           `json:"propertyValue_executionIsolationThreadTimeoutInMilliseconds"`
+	ExecutionIsolationThreadInterruptOnTimeout       bool             `json:"propertyValue_executionIsolationThreadInterruptOnTimeout"`
+	CircuitBreakerOpen                               bool             `json:"isCircuitBreakerOpen"`
+	CircuitBreakerEnabled                            bool             `json:"propertyValue_circuitBreakerEnabled"`
+	CircuitBreakerForceClosed                        bool             `json:"propertyValue_circuitBreakerForceClosed"`
+	CircuitBreakerForceOpen                          bool             `json:"propertyValue_circuitBreakerForceOpen"`
+	RequestCacheEnabled                              bool             `json:"propertyValue_requestCacheEnabled"`
+	RequestLogEnabled                                bool             `json:"propertyValue_requestLogEnabled"`
 }
 
 type streamCmdLatency struct {

@@ -7,11 +7,11 @@ import (
 )
 
 type executorPool struct {
-	Name              string
+	Tickets           chan *struct{}
 	MaxActiveRequests *rolling.Number
 	Executed          *rolling.Number
+	Name              string
 	Max               int
-	Tickets           chan *struct{}
 }
 
 func newExecutorPool(name string) *executorPool {

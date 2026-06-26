@@ -42,7 +42,7 @@ func BenchmarkRollingNumberIncrement(b *testing.B) {
 
 	b.ResetTimer()
 
-	for i := 0; i < b.N; i++ {
+	for range b.N {
 		n.Increment(1)
 	}
 }
@@ -52,7 +52,7 @@ func BenchmarkRollingNumberUpdateMax(b *testing.B) {
 
 	b.ResetTimer()
 
-	for i := 0; i < b.N; i++ {
+	for i := range b.N {
 		n.UpdateMax(int64(i))
 	}
 }

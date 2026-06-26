@@ -21,7 +21,7 @@ type numberBucket struct {
 // NewNumber initializes a RollingNumber struct.
 func NewNumber() *Number {
 	buckets := make([]atomic.Pointer[numberBucket], numberBucketSize)
-	for i := 0; i < numberBucketSize; i++ {
+	for i := range numberBucketSize {
 		buckets[i].Store(&numberBucket{})
 	}
 	return &Number{

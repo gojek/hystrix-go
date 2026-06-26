@@ -59,12 +59,10 @@ type MetricResult struct {
 }
 
 // MetricCollector represents the contract that all collectors must fulfill to gather circuit statistics.
-// Implementations of this interface do not have to maintain locking around thier data stores so long as
-// they are not modified outside of the hystrix context.
 type MetricCollector interface {
 	// Update accepts a set of metrics from a command execution for remote instrumentation
 	// Note: Update will be called synchronously by hystrix-go, so custom plugin needs to
-	//make sure they can be called concurrently as well as do not block for long time.
+	// make sure they can be called concurrently as well as do not block for long time.
 	Update(MetricResult)
 	// Reset resets the internal counters and timers.
 	Reset()

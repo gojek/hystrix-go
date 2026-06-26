@@ -59,6 +59,7 @@ const (
 type (
 	// DatadogClient is the minimum interface needed by
 	// NewDatadogCollectorWithClient
+	//
 	// Deprecated: use datadog.Client instead
 	//
 	//go:fix inline
@@ -66,6 +67,7 @@ type (
 
 	// DatadogCollector fulfills the metricCollector interface allowing users to
 	// ship circuit stats to Datadog.
+	//
 	// Deprecated: use datadog.Collector instead
 	//
 	//go:fix inline
@@ -76,6 +78,7 @@ type (
 // "github.com/DataDog/datadog-go/statsd".(*Client).
 //
 // addr is in the format "<host>:<port>" (e.g. "localhost:8125")
+//
 // Deprecated: use datadog.NewCollector instead
 //
 //go:fix inline
@@ -87,6 +90,7 @@ func NewDatadogCollector(addr, prefix string) (func(string) metricCollector.Metr
 // provide your own implementation of a statsd client, alter configuration on
 // "github.com/DataDog/datadog-go/statsd".(*Client), provide additional tags per
 // circuit-metric tuple, and add logging if you need it.
+//
 // Deprecated: use datadog.NewCollectorWithClient instead
 //
 //go:fix inline

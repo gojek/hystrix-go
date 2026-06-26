@@ -9,8 +9,10 @@ import (
 	"github.com/rcrowley/go-metrics"
 )
 
-var makeTimerFunc = func() interface{} { return metrics.NewTimer() }
-var makeCounterFunc = func() interface{} { return metrics.NewCounter() }
+var (
+	makeTimerFunc   = func() any { return metrics.NewTimer() }
+	makeCounterFunc = func() any { return metrics.NewCounter() }
+)
 
 // Collector fulfills the metricCollector interface allowing users to ship circuit
 // stats to a graphite backend. To use users must call InitializeCollector before
@@ -52,9 +54,9 @@ func InitializeCollector(config *CollectorConfig) {
 // prefix given to this circuit will be {config.Prefix}.{circuit_name}.{metric}.
 // Circuits with "/" in their names will have them replaced with ".".
 func NewCollector(name string) metricCollector.MetricCollector {
-	name = strings.Replace(name, "/", "-", -1)
-	name = strings.Replace(name, ":", "-", -1)
-	name = strings.Replace(name, ".", "-", -1)
+	name = strings.ReplaceAll(name, "/", "-")
+	name = strings.ReplaceAll(name, ":", "-")
+	name = strings.ReplaceAll(name, ".", "-")
 	return &Collector{
 		attemptsPrefix:          name + ".attempts",
 		errorsPrefix:            name + ".errors",
