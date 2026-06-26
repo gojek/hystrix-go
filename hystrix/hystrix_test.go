@@ -3,12 +3,10 @@ package hystrix
 import (
 	"context"
 	"errors"
-	"fmt"
 	"strings"
 	"testing"
-	"time"
-
 	"testing/quick"
+	"time"
 
 	"github.com/gojek/hystrix-go/hystrix/internal/test"
 )
@@ -18,7 +16,7 @@ func TestSuccess(t *testing.T) {
 	test.SyncTest(t, func(t *testing.T) {
 		const circuitName = "hystrix-success"
 		resultChan := make(chan int)
-		errChan := GoC(context.Background(), circuitName, func(ctx context.Context) error {
+		errChan := GoC(context.Background(), circuitName, func(_ context.Context) error {
 			resultChan <- 1
 			return nil
 		}, nil)
@@ -45,9 +43,9 @@ func TestFallback(t *testing.T) {
 	test.SyncTest(t, func(t *testing.T) {
 		const circuitName = "hystrix-fallback"
 		resultChan := make(chan int)
-		errChan := GoC(context.Background(), circuitName, func(ctx context.Context) error {
-			return fmt.Errorf("error")
-		}, func(ctx context.Context, err error) error {
+		errChan := GoC(context.Background(), circuitName, func(_ context.Context) error {
+			return errors.New("error")
+		}, func(_ context.Context, err error) error {
 			if err.Error() == "error" {
 				resultChan <- 1
 			}
@@ -88,8 +86,8 @@ func TestTimeout(t *testing.T) {
 			interuptibleSleep(ctx, time.Second)
 			resultChan <- 1
 			return nil
-		}, func(ctx context.Context, err error) error {
-			if err == ErrTimeout {
+		}, func(_ context.Context, err error) error {
+			if errors.Is(err, ErrTimeout) {
 				resultChan <- 2
 			}
 			return nil
@@ -150,13 +148,13 @@ func TestMaxConcurrent(t *testing.T) {
 		// and 3 of those commands try to execute at the same time
 		var good, bad int
 
-		for i := 0; i < 3; i++ {
+		for range 3 {
 			errChan := GoC(t.Context(), circuitName, run, nil)
 			time.Sleep(10 * time.Millisecond)
 
 			select {
 			case err := <-errChan:
-				if err == ErrMaxConcurrency {
+				if errors.Is(err, ErrMaxConcurrency) {
 					bad++
 				}
 			default:
@@ -176,8 +174,8 @@ func TestMaxConcurrent(t *testing.T) {
 func TestNilFallbackRunError(t *testing.T) {
 	t.Parallel()
 	test.SyncTest(t, func(t *testing.T) {
-		errChan := GoC(context.Background(), "hystrix-nil-fallback-run-error", func(ctx context.Context) error {
-			return fmt.Errorf("run_error")
+		errChan := GoC(context.Background(), "hystrix-nil-fallback-run-error", func(_ context.Context) error {
+			return errors.New("run_error")
 		}, nil)
 
 		if err := <-errChan; err.Error() != "run_error" {
@@ -189,10 +187,10 @@ func TestNilFallbackRunError(t *testing.T) {
 func TestFailedFallback(t *testing.T) {
 	t.Parallel()
 	test.SyncTest(t, func(t *testing.T) {
-		errChan := GoC(context.Background(), "hystrix-failed-fallback", func(ctx context.Context) error {
-			return fmt.Errorf("run_error")
-		}, func(ctx context.Context, err error) error {
-			return fmt.Errorf("fallback_error")
+		errChan := GoC(context.Background(), "hystrix-failed-fallback", func(_ context.Context) error {
+			return errors.New("run_error")
+		}, func(_ context.Context, _ error) error {
+			return errors.New("fallback_error")
 		})
 
 		if err := <-errChan; err.Error() != "fallback failed with 'fallback_error'. run error was 'run_error'" {
@@ -213,7 +211,7 @@ func TestCloseCircuitAfterSuccess(t *testing.T) {
 		cb.setOpen()
 
 		// commands immediately following should short-circuit
-		errChan := GoC(context.Background(), circuitName, func(ctx context.Context) error {
+		errChan := GoC(context.Background(), circuitName, func(_ context.Context) error {
 			return nil
 		}, nil)
 		if val := <-errChan; !errors.Is(val, ErrCircuitOpen) {
@@ -224,7 +222,7 @@ func TestCloseCircuitAfterSuccess(t *testing.T) {
 		time.Sleep(600 * time.Millisecond)
 
 		done := make(chan bool, 1)
-		GoC(context.Background(), circuitName, func(ctx context.Context) error {
+		GoC(context.Background(), circuitName, func(_ context.Context) error {
 			done <- true
 			return nil
 		}, nil)
@@ -247,10 +245,10 @@ func TestFailAfterTimeout(t *testing.T) {
 		ConfigureCommand(circuitName, CommandConfig{Timeout: 10})
 
 		out := make(chan struct{}, 2)
-		errChan := GoC(context.Background(), circuitName, func(ctx context.Context) error {
+		errChan := GoC(context.Background(), circuitName, func(_ context.Context) error {
 			time.Sleep(50 * time.Millisecond)
-			return fmt.Errorf("foo")
-		}, func(ctx context.Context, err error) error {
+			return errors.New("foo")
+		}, func(_ context.Context, err error) error {
 			out <- struct{}{}
 			return err
 		})
@@ -284,9 +282,9 @@ func TestSlowFallbackOpenCircuit(t *testing.T) {
 		out := make(chan struct{}, 2)
 
 		// when the command short circuits
-		GoC(t.Context(), circuitName, func(ctx context.Context) error {
+		GoC(t.Context(), circuitName, func(_ context.Context) error {
 			return nil
-		}, func(ctx context.Context, err error) error {
+		}, func(_ context.Context, _ error) error {
 			time.Sleep(100 * time.Millisecond)
 			out <- struct{}{}
 			return nil
@@ -321,12 +319,12 @@ func TestFallbackAfterRejected(t *testing.T) {
 		// executing a successful fallback function due to rejection
 		runChan := make(chan bool, 1)
 		fallbackChan := make(chan bool, 1)
-		GoC(context.Background(), circuitName, func(ctx context.Context) error {
+		GoC(context.Background(), circuitName, func(_ context.Context) error {
 			// if run executes after fallback, this will panic due to sending to a closed channel
 			runChan <- true
 			close(fallbackChan)
 			return nil
-		}, func(ctx context.Context, err error) error {
+		}, func(_ context.Context, _ error) error {
 			fallbackChan <- true
 			close(runChan)
 			return nil
@@ -413,14 +411,14 @@ func TestContextHandling(t *testing.T) {
 			return nil
 		}
 
-		fallback := func(ctx context.Context, e error) error {
+		fallback := func(_ context.Context, _ error) error {
 			return nil
 		}
 
-		//with a valid context
+		// with a valid context
 		errChan := GoC(t.Context(), circuitName, run, nil)
 		time.Sleep(time.Millisecond)
-		if err := <-errChan; err != ErrTimeout {
+		if err := <-errChan; !errors.Is(err, ErrTimeout) {
 			t.Errorf("expected ErrTimeout but got %v", err)
 		}
 		if val := cb.metrics.DefaultCollector().NumRequests().Sum(time.Now()); val != 1 {
@@ -440,7 +438,7 @@ func TestContextHandling(t *testing.T) {
 		}
 		cb.metrics.DefaultCollector().Reset()
 
-		//with a valid context and a fallback
+		// with a valid context and a fallback
 		errChan = GoC(t.Context(), circuitName, run, fallback)
 		time.Sleep(25 * time.Millisecond)
 		if val := len(errChan); val != 0 {
@@ -466,11 +464,11 @@ func TestContextHandling(t *testing.T) {
 		}
 		cb.metrics.DefaultCollector().Reset()
 
-		//with a context timeout
+		// with a context timeout
 		testCtx, cancel := context.WithTimeout(context.Background(), 5*time.Millisecond)
 		errChan = GoC(testCtx, circuitName, run, nil)
 		time.Sleep(time.Millisecond)
-		if err := <-errChan; err != context.DeadlineExceeded {
+		if err := <-errChan; !errors.Is(err, context.DeadlineExceeded) {
 			t.Errorf("expected DeadlineExceeded but got %v", err)
 		}
 
@@ -492,7 +490,7 @@ func TestContextHandling(t *testing.T) {
 		cancel()
 		cb.metrics.DefaultCollector().Reset()
 
-		//with a context timeout and a fallback
+		// with a context timeout and a fallback
 		testCtx, cancel = context.WithTimeout(context.Background(), 5*time.Millisecond)
 		errChan = GoC(testCtx, circuitName, run, fallback)
 		time.Sleep(25 * time.Millisecond)
@@ -520,13 +518,13 @@ func TestContextHandling(t *testing.T) {
 		cancel()
 		cb.metrics.DefaultCollector().Reset()
 
-		//with a canceled context
+		// with a canceled context
 		testCtx, cancel = context.WithCancel(context.Background())
 		errChan = GoC(testCtx, circuitName, run, nil)
 		time.Sleep(5 * time.Millisecond)
 		cancel()
 		time.Sleep(time.Millisecond)
-		if err := <-errChan; err != context.Canceled {
+		if err := <-errChan; !errors.Is(err, context.Canceled) {
 			t.Errorf("expected context.Canceled but got %v", err)
 		}
 		if val := cb.metrics.DefaultCollector().NumRequests().Sum(time.Now()); val != 1 {
@@ -546,7 +544,7 @@ func TestContextHandling(t *testing.T) {
 		}
 		cb.metrics.DefaultCollector().Reset()
 
-		//with a canceled context and a fallback
+		// with a canceled context and a fallback
 		testCtx, cancel = context.WithCancel(context.Background())
 		errChan = GoC(testCtx, circuitName, run, fallback)
 		time.Sleep(5 * time.Millisecond)
@@ -580,7 +578,7 @@ func TestDoC_Success(t *testing.T) {
 	t.Parallel()
 	test.SyncTest(t, func(t *testing.T) {
 		out := make(chan bool, 1)
-		err := DoC(context.Background(), "hystrix-doc-success", func(ctx context.Context) error {
+		err := DoC(context.Background(), "hystrix-doc-success", func(_ context.Context) error {
 			out <- true
 			return nil
 		}, nil)
@@ -597,8 +595,8 @@ func TestDoC_Fails(t *testing.T) {
 	t.Parallel()
 	test.SyncTest(t, func(t *testing.T) {
 		const circuitName = "hystrix-doc-fails"
-		run := func(ctx context.Context) error {
-			return fmt.Errorf("i failed")
+		run := func(_ context.Context) error {
+			return errors.New("i failed")
 		}
 
 		err := DoC(context.Background(), circuitName, run, nil)
@@ -608,7 +606,7 @@ func TestDoC_Fails(t *testing.T) {
 
 		// with a succeeding fallback"
 		out := make(chan bool, 1)
-		err = DoC(context.Background(), circuitName, run, func(ctx context.Context, err error) error {
+		err = DoC(context.Background(), circuitName, run, func(_ context.Context, _ error) error {
 			out <- true
 			return nil
 		})
@@ -620,8 +618,8 @@ func TestDoC_Fails(t *testing.T) {
 		}
 
 		// with a failing fallback"
-		err = DoC(context.Background(), circuitName, run, func(ctx context.Context, err error) error {
-			return fmt.Errorf("fallback failed")
+		err = DoC(context.Background(), circuitName, run, func(_ context.Context, _ error) error {
+			return errors.New("fallback failed")
 		})
 		if err.Error() != "fallback failed with 'fallback failed'. run error was 'i failed'" {
 			t.Errorf(`expected "fallback failed with 'fallback failed'. run error was 'i failed'" but got %v`, err)
@@ -640,7 +638,7 @@ func TestDoC_Timesout(t *testing.T) {
 			return nil
 		}, nil)
 
-		if err != ErrTimeout {
+		if !errors.Is(err, ErrTimeout) {
 			t.Errorf("expected ErrTimeout but got %v", err)
 		}
 	})
@@ -657,7 +655,7 @@ func interuptibleSleep(ctx context.Context, duration time.Duration) {
 // go test -bench="Benchmark.*" -run ^$ -memprofile mem.out ./
 // go test -bench="Benchmark.*" -run ^$ -cpuprofile cpu.out ./
 func BenchmarkDoC(b *testing.B) {
-	//b.Skip()
+	// b.Skip()
 	const name = "bench"
 	ConfigureCommand(name, CommandConfig{Timeout: 50, MaxConcurrentRequests: 200})
 	_, _, _ = GetCircuit(name)
@@ -667,7 +665,7 @@ func BenchmarkDoC(b *testing.B) {
 	b.ResetTimer()
 	b.RunParallel(func(pb *testing.PB) {
 		for pb.Next() {
-			err := DoC(b.Context(), name, func(ctx context.Context) error {
+			err := DoC(b.Context(), name, func(_ context.Context) error {
 				return nil
 			}, nil)
 			if err != nil {

@@ -3,7 +3,7 @@ package hystrix
 import (
 	"context"
 	"encoding/json"
-	"fmt"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -15,15 +15,13 @@ import (
 )
 
 type eventStreamTestServer struct {
-	*httptest.Server
+	Server *httptest.Server
 	*StreamHandler
 }
 
-func (s *eventStreamTestServer) stopTestServer() error {
-	s.Close()
+func (s *eventStreamTestServer) stopTestServer() {
+	s.Server.Close()
 	s.Stop()
-
-	return nil
 }
 
 func startTestServer() *eventStreamTestServer {
@@ -35,16 +33,16 @@ func startTestServer() *eventStreamTestServer {
 	}
 }
 
-func sleepingCommand(t *testing.T, name string, duration time.Duration) {
+func sleepingCommand(t *testing.T, name string) {
 	done := make(chan bool)
 	errChan := Go(name, func() error {
-		time.Sleep(duration)
+		time.Sleep(time.Millisecond)
 		done <- true
 		return nil
 	}, nil)
 
 	select {
-	case _ = <-done:
+	case <-done:
 		// do nothing
 	case err := <-errChan:
 		t.Fatal(err)
@@ -55,13 +53,13 @@ func failingCommand(t *testing.T, name string, duration time.Duration) {
 	done := make(chan bool)
 	errChan := Go(name, func() error {
 		time.Sleep(duration)
-		return fmt.Errorf("fail")
+		return errors.New("fail")
 	}, nil)
 
 	select {
-	case _ = <-done:
+	case <-done:
 		t.Fatal("should not have succeeded")
-	case _ = <-errChan:
+	case <-errChan:
 		// do nothing
 	}
 }
@@ -121,16 +119,18 @@ func streamMetrics(t *testing.T, url string) (chan string, chan bool) {
 	go func() {
 		res, err := http.Get(url)
 		if err != nil {
-			t.Fatal(err)
+			t.Error(err)
 		}
-		defer res.Body.Close()
+		defer func() {
+			_ = res.Body.Close()
+		}()
 
 		buf := []byte{0}
 		data := ""
 		for {
 			_, err := res.Body.Read(buf)
 			if err != nil {
-				t.Fatal(err)
+				t.Error(err)
 			}
 
 			data += string(buf)
@@ -141,7 +141,7 @@ func streamMetrics(t *testing.T, url string) (chan string, chan bool) {
 			}
 
 			select {
-			case _ = <-done:
+			case <-done:
 				close(metrics)
 				return
 			default:
@@ -160,11 +160,11 @@ func TestEventStream(t *testing.T) {
 		server := startTestServer()
 		defer server.stopTestServer()
 
-		//after 2 successful commands"
-		sleepingCommand(t, successCircuitName, 1*time.Millisecond)
-		sleepingCommand(t, successCircuitName, 1*time.Millisecond)
+		// after 2 successful commands"
+		sleepingCommand(t, successCircuitName)
+		sleepingCommand(t, successCircuitName)
 
-		event := grabFirstCommandFromStream(t, server.URL, successCircuitName)
+		event := grabFirstCommandFromStream(t, server.Server.URL, successCircuitName)
 		if event.Name != successCircuitName {
 			t.Fatalf("expected event name to be %v, but was %v", successCircuitName, event.Name)
 		}
@@ -173,11 +173,11 @@ func TestEventStream(t *testing.T) {
 		}
 
 		// after 1 successful command and 2 unsuccessful commands
-		sleepingCommand(t, failingCircuitName, 1*time.Millisecond)
+		sleepingCommand(t, failingCircuitName)
 		failingCommand(t, failingCircuitName, 1*time.Millisecond)
 		failingCommand(t, failingCircuitName, 1*time.Millisecond)
 
-		metric := grabFirstCommandFromStream(t, server.URL, failingCircuitName)
+		metric := grabFirstCommandFromStream(t, server.Server.URL, failingCircuitName)
 		if metric.ErrorPct != 67 {
 			t.Fatalf("expected metric error percent to be 67, but was %v", metric.ErrorPct)
 		}
@@ -190,13 +190,13 @@ func TestClientCancelEventStream(t *testing.T) {
 		server := startTestServer()
 		defer server.stopTestServer()
 
-		sleepingCommand(t, "clientcancel-eventstream", 1*time.Millisecond)
+		sleepingCommand(t, "clientcancel-eventstream")
 
 		// after a client connects
 		ctx, cnclFn := context.WithCancel(context.Background())
 		defer cnclFn()
 
-		req, err := http.NewRequestWithContext(ctx, "GET", server.URL, nil)
+		req, err := http.NewRequestWithContext(ctx, http.MethodGet, server.Server.URL, nil)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -210,21 +210,23 @@ func TestClientCancelEventStream(t *testing.T) {
 			buf := []byte{0}
 			res, err := client.Do(req)
 			if err != nil {
-				t.Fatal(err)
+				t.Error(err)
 			}
-			defer res.Body.Close()
+			defer func() {
+				_ = res.Body.Close()
+			}()
 
 			for {
 				select {
 				case <-wait:
-					//wait for master goroutine to break us out
+					// wait for master goroutine to break us out
 					cnclFn()
 					return
 				default:
-					//read something
+					// read something
 					_, err = res.Body.Read(buf)
 					if err != nil {
-						t.Fatal(err)
+						t.Error(err)
 					}
 					if afr != nil {
 						afr.Done()
@@ -237,11 +239,11 @@ func TestClientCancelEventStream(t *testing.T) {
 		afterFirstRead.Wait()
 
 		// it should be registered
-		server.StreamHandler.mu.RLock()
-		if len(server.StreamHandler.requests) != 1 {
-			t.Fatalf("expected 1 request, but got %d", len(server.StreamHandler.requests))
+		server.mu.RLock()
+		if len(server.requests) != 1 {
+			t.Fatalf("expected 1 request, but got %d", len(server.requests))
 		}
-		server.StreamHandler.mu.RUnlock()
+		server.mu.RUnlock()
 
 		// after client disconnects
 		// let the request be cancelled and the body closed
@@ -250,11 +252,11 @@ func TestClientCancelEventStream(t *testing.T) {
 		time.Sleep(2000 * time.Millisecond)
 		// it should be detected as disconnected and de-registered
 		// confirm we have 0 clients
-		server.StreamHandler.mu.RLock()
-		if len(server.StreamHandler.requests) != 0 {
-			t.Fatalf("expected 0 request, but got %d", len(server.StreamHandler.requests))
+		server.mu.RLock()
+		if len(server.requests) != 0 {
+			t.Fatalf("expected 0 request, but got %d", len(server.requests))
 		}
-		server.StreamHandler.mu.RUnlock()
+		server.mu.RUnlock()
 	})
 }
 
@@ -266,8 +268,8 @@ func TestThreadPoolStream(t *testing.T) {
 		defer server.stopTestServer()
 
 		// after a successful command
-		sleepingCommand(t, circuitName, 1*time.Millisecond)
-		metric := grabFirstThreadPoolFromStream(t, server.URL, circuitName)
+		sleepingCommand(t, circuitName)
+		metric := grabFirstThreadPoolFromStream(t, server.Server.URL, circuitName)
 
 		// the rolling count of executions should increment
 		if metric.RollingCountThreadsExecuted != 1 {

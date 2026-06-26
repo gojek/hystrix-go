@@ -40,12 +40,14 @@ type CommandConfig struct {
 	ErrorPercentThreshold  int `json:"error_percent_threshold"`
 }
 
-// settingsMutex only used for adding new settings to limit concurrent writes. Each writes involve copying existing
-// circuitSettings, modifying it and then doing atomic store operation. This setup allows us to skip
-// sync.Mutex/sync.RWMutex operations for happy path reads, which is the most common case
-var settingsMutex sync.Mutex
-var circuitSettings atomic.Pointer[map[string]*Settings]
-var log logger
+var (
+	// settingsMutex only used for adding new settings to limit concurrent writes. Each writes involve copying existing
+	// circuitSettings, modifying it and then doing atomic store operation. This setup allows us to skip
+	// sync.Mutex/sync.RWMutex operations for happy path reads, which is the most common case
+	settingsMutex   sync.Mutex
+	circuitSettings atomic.Pointer[map[string]*Settings]
+	log             logger
+)
 
 func init() {
 	circuitSettings.Store(&map[string]*Settings{})

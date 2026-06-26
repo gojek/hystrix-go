@@ -11,12 +11,11 @@ import (
 // CircuitBreaker is created for each ExecutorPool to track whether requests
 // should be attempted, or rejected if the Health of the circuit is too low.
 type CircuitBreaker struct {
+	executorPool           *executorPool
+	metrics                *metricExchange
 	Name                   string
-	open                   atomic.Bool
 	openedOrLastTestedTime atomic.Int64
-
-	executorPool *executorPool
-	metrics      *metricExchange
+	open                   atomic.Bool
 }
 
 var (

@@ -9,7 +9,7 @@ import (
 
 func metricFailingPercent(circuitName string, p int) *metricExchange {
 	m := newMetricExchange(circuitName)
-	for i := 0; i < 100; i++ {
+	for i := range 100 {
 		t := "success"
 		if i < p {
 			t = "failure"

@@ -16,7 +16,7 @@ func TestOrdinal(t *testing.T) {
 		}
 
 		// and given a set of lengths and percentiles"
-		var ordinalTests = []struct {
+		ordinalTests := []struct {
 			length   int
 			perc     float64
 			expected int64
@@ -50,7 +50,12 @@ func TestOrdinal(t *testing.T) {
 		}
 
 		// after adding many timings
-		durations := []int{1, 1004, 1004, 1004, 1004, 1004, 1004, 1004, 1004, 1004, 1005, 1005, 1005, 1005, 1005, 1005, 1005, 1005, 1005, 1005, 1005, 1005, 1005, 1005, 1006, 1006, 1006, 1006, 1007, 1007, 1007, 1008, 1015}
+		durations := []int{
+			1, 1004, 1004, 1004, 1004, 1004, 1004, 1004, 1004,
+			1004, 1005, 1005, 1005, 1005, 1005, 1005, 1005,
+			1005, 1005, 1005, 1005, 1005, 1005, 1005, 1006,
+			1006, 1006, 1006, 1007, 1007, 1007, 1008, 1015,
+		}
 		for _, d := range durations {
 			r.Add(time.Duration(d) * time.Millisecond)
 		}

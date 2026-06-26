@@ -9,6 +9,7 @@ import (
 // circuits are started. Then register NewStatsdCollector with metricCollector.Registry.Register(NewStatsdCollector).
 //
 // This Collector uses https://github.com/cactus/go-statsd-client/ for transport.
+//
 // Deprecated: use statsd.Collector instead
 //
 //go:fix inline
@@ -36,6 +37,7 @@ const (
 )
 
 // StatsdCollectorConfig provides configuration that the Statsd client will need.
+//
 // Deprecated: use statsd.CollectorConfig instead
 //
 //go:fix inline
@@ -45,6 +47,7 @@ type StatsdCollectorConfig = statsd.CollectorConfig
 // and should be called before any metrics are recorded.
 //
 // Users should ensure to call Close() on the client.
+//
 // Deprecated: use stats.InitializeCollector instead
 //
 //go:fix inline

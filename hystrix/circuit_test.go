@@ -1,13 +1,12 @@
 package hystrix
 
 import (
+	"math/rand/v2"
 	"sync"
 	"sync/atomic"
 	"testing"
-	"time"
-
-	"math/rand/v2"
 	"testing/quick"
+	"time"
 
 	"github.com/gojek/hystrix-go/hystrix/internal/test"
 )
@@ -39,15 +38,15 @@ func TestMultithreadedGetCircuit(t *testing.T) {
 	test.SyncTest(t, func(t *testing.T) {
 		numThreads := 100
 		var numCreates int32
-		var numRunningRoutines int32
+		var numRunningRoutines atomic.Int32
 		var startingLine sync.WaitGroup
 		var finishLine sync.WaitGroup
 		startingLine.Add(1)
 		finishLine.Add(numThreads)
 
-		for i := 0; i < numThreads; i++ {
+		for range numThreads {
 			go func() {
-				if atomic.AddInt32(&numRunningRoutines, 1) == int32(numThreads) {
+				if numRunningRoutines.Add(1) == int32(numThreads) {
 					startingLine.Done()
 				} else {
 					startingLine.Wait()
@@ -99,7 +98,7 @@ func TestReportEventOpenThenClose(t *testing.T) {
 
 		recentOpenedTime := cb.openedOrLastTestedTime.Load()
 		if recentOpenedTime != openedTime {
-			t.Errorf("expected openedOrLastTestedTime to remain unchanged, but it changed from %v to %v", openedTime, cb.openedOrLastTestedTime)
+			t.Errorf("expected openedOrLastTestedTime to remain unchanged, but it changed from %v to %v", openedTime, recentOpenedTime)
 		}
 	})
 }
@@ -121,7 +120,7 @@ func TestReportEventMultiThreaded(t *testing.T) {
 			wg := &sync.WaitGroup{}
 			wg.Add(count)
 			c := make(chan bool, count)
-			for i := 0; i < count; i++ {
+			for range count {
 				go func() {
 					defer func() {
 						if r := recover(); r != nil {

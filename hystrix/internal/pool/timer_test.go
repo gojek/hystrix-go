@@ -99,7 +99,7 @@ func TestReleasingExpiredTimerChannelHasNoStaleValue(t *testing.T) {
 
 func TestConcurrentAcquireAndReleaseTimersDoNotRace(t *testing.T) {
 	t.Parallel()
-	test.SyncTest(t, func(t *testing.T) {
+	test.SyncTest(t, func(_ *testing.T) {
 		var wg sync.WaitGroup
 		for range 100 {
 			wg.Go(func() {

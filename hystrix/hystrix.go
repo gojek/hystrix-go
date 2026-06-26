@@ -9,10 +9,12 @@ import (
 	"github.com/gojek/hystrix-go/hystrix/internal/pool"
 )
 
-type runFunc func() error
-type fallbackFunc func(error) error
-type runFuncC func(context.Context) error
-type fallbackFuncC func(context.Context, error) error
+type (
+	runFunc       func() error
+	fallbackFunc  func(error) error
+	runFuncC      func(context.Context) error
+	fallbackFuncC func(context.Context, error) error
+)
 
 // A CircuitError is an error which models various failure states of execution,
 // such as the circuit being open or a timeout.
@@ -49,12 +51,12 @@ var (
 //
 // Define a fallback function if you want to define some code to execute during outages.
 func Go(name string, run runFunc, fallback fallbackFunc) chan error {
-	runC := func(ctx context.Context) error {
+	runC := func(_ context.Context) error {
 		return run()
 	}
 	var fallbackC fallbackFuncC
 	if fallback != nil {
-		fallbackC = func(ctx context.Context, err error) error {
+		fallbackC = func(_ context.Context, err error) error {
 			return fallback(err)
 		}
 	}
@@ -81,12 +83,12 @@ func GoC(ctx context.Context, name string, run runFuncC, fallback fallbackFuncC)
 // Do runs your function in a synchronous manner, blocking until either your function succeeds
 // or an error is returned, including hystrix circuit errors
 func Do(name string, run runFunc, fallback fallbackFunc) error {
-	runC := func(ctx context.Context) error {
+	runC := func(_ context.Context) error {
 		return run()
 	}
 	var fallbackC fallbackFuncC
 	if fallback != nil {
-		fallbackC = func(ctx context.Context, err error) error {
+		fallbackC = func(_ context.Context, err error) error {
 			return fallback(err)
 		}
 	}
@@ -169,15 +171,16 @@ func (c *command) reportEvent(primaryEvent, secondaryEvent string) {
 func (c *command) errorWithFallback(ctx context.Context, err error) error {
 	primaryEvent := "failure"
 	ctxErr := ctx.Err()
-	if errors.Is(err, ErrCircuitOpen) {
+	switch {
+	case errors.Is(err, ErrCircuitOpen):
 		primaryEvent = "short-circuit"
-	} else if errors.Is(err, ErrMaxConcurrency) {
+	case errors.Is(err, ErrMaxConcurrency):
 		primaryEvent = "rejected"
-	} else if errors.Is(err, ErrTimeout) {
+	case errors.Is(err, ErrTimeout):
 		primaryEvent = "timeout"
-	} else if errors.Is(ctxErr, context.Canceled) {
+	case errors.Is(ctxErr, context.Canceled):
 		primaryEvent = "context_canceled"
-	} else if errors.Is(ctxErr, context.DeadlineExceeded) {
+	case errors.Is(ctxErr, context.DeadlineExceeded):
 		primaryEvent = "context_deadline_exceeded"
 	}
 

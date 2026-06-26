@@ -1,0 +1,72 @@
+version: "2"
+run:
+  go: "1.25"
+  tests: true
+linters:
+  enable:
+    - asciicheck
+    - bidichk
+    - bodyclose
+    - copyloopvar
+    - dupl
+    - durationcheck
+    - errorlint
+    - exptostd
+    - gocheckcompilerdirectives
+    - gocritic
+    - intrange
+    - misspell
+    - nakedret
+    - nilnesserr
+    - perfsprint
+    - prealloc
+    - predeclared
+    - revive
+    - staticcheck
+    - unconvert
+    - unparam
+    - usestdlibvars
+    - wastedassign
+    - whitespace
+    - modernize
+  settings:
+    gocognit:
+      min-complexity: 20
+    gocritic:
+      enabled-checks:
+        - commentedOutCode
+        - nilValReturn
+        - sloppyReassign
+        - truncateCmp
+        - weakCond
+        - boolExprSimplify
+        - builtinShadow
+        - commentedOutImport
+        - emptyFallthrough
+        - regexpSimplify
+        - appendCombine
+    govet:
+      enable-all: true
+  exclusions:
+    generated: lax
+    presets:
+      - comments
+    rules:
+      - path: plugins/(.+)\.go$
+        text: "var-naming: don't use underscores in Go names"
+
+issues:
+  max-issues-per-linter: 0
+  max-same-issues: 0
+formatters:
+  enable:
+    - gofumpt
+    - gci
+    - golines
+  settings:
+    golines:
+      max-len: 150
+      reformat-tags: false
+      tab-len: 2
+  exclusions:
+    generated: lax

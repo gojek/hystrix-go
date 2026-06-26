@@ -23,9 +23,7 @@ const (
 	maxDelay    = 55
 )
 
-var (
-	delay int
-)
+var delay int
 
 const (
 	up = iota
@@ -74,27 +72,27 @@ func timedHandler(fn func(w http.ResponseWriter, r *http.Request), stats gostats
 	return func(w http.ResponseWriter, r *http.Request) {
 		start := time.Now()
 		fn(w, r)
-		stats.TimingDuration("request", time.Since(start), 1)
+		_ = stats.TimingDuration("request", time.Since(start), 1)
 	}
 }
 
-func handle(w http.ResponseWriter, r *http.Request) {
+func handle(w http.ResponseWriter, _ *http.Request) {
 	done := make(chan struct{}, 1)
 	errChan := hystrix.Go("test", func() error {
 		delta := rand.IntN(deltaWindow)
 		time.Sleep(time.Duration(delay+delta) * time.Millisecond)
 		done <- struct{}{}
 		return nil
-	}, func(err error) error {
+	}, func(_ error) error {
 		done <- struct{}{}
 		return nil
 	})
 
 	select {
 	case err := <-errChan:
-		http.Error(w, err.Error(), 500)
+		http.Error(w, err.Error(), http.StatusInternalServerError)
 	case <-done:
-		w.Write([]byte("OK"))
+		_, _ = w.Write([]byte("OK"))
 	}
 }
 
@@ -109,9 +107,9 @@ func rotateDelay() {
 		}
 
 		if direction == up {
-			delay += 1
+			delay++
 		} else {
-			delay -= 1
+			delay--
 		}
 
 		time.Sleep(5 * time.Second)

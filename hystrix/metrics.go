@@ -8,9 +8,9 @@ import (
 )
 
 type commandExecution struct {
+	Start            time.Time
 	PrimaryEvent     string
 	SecondaryEvent   string
-	Start            time.Time
 	RunDuration      time.Duration
 	ConcurrencyInUse float64
 }
