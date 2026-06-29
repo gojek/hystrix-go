@@ -6,7 +6,7 @@ replace github.com/gojek/hystrix-go/hystrix => ../../hystrix
 
 require (
 	github.com/DataDog/datadog-go v4.8.3+incompatible
-	github.com/gojek/hystrix-go/hystrix v0.0.0-00010101000000-000000000000
+	github.com/gojek/hystrix-go/hystrix v1.0.0
 )
 
 require (
